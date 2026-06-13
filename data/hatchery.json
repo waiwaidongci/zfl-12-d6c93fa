@@ -21,14 +21,58 @@
   ],
   "ponds": [
     {
+      "id": "P-01",
+      "name": "育苗池1号",
+      "capacity": "40m³",
+      "purpose": "虾苗培育",
+      "status": "idle",
+      "disinfectionDate": "2026-05-28",
+      "note": "标准虾苗培育池，配备独立增氧系统"
+    },
+    {
+      "id": "P-02",
+      "name": "育苗池2号",
+      "capacity": "45m³",
+      "purpose": "虾苗培育",
+      "status": "idle",
+      "disinfectionDate": "2026-05-30",
+      "note": ""
+    },
+    {
       "id": "P-03",
       "name": "育苗池3号",
-      "volume": "42m3"
+      "capacity": "42m³",
+      "purpose": "虾苗培育",
+      "status": "active",
+      "disinfectionDate": "2026-05-25",
+      "note": "当前养殖南美白对虾 B-260601 批次"
+    },
+    {
+      "id": "P-04",
+      "name": "育苗池4号",
+      "capacity": "48m³",
+      "purpose": "暂养池",
+      "status": "cleaning",
+      "disinfectionDate": "2026-06-12",
+      "note": "消毒作业中，预计 6 月 14 日完成"
     },
     {
       "id": "P-05",
       "name": "育苗池5号",
-      "volume": "48m3"
+      "capacity": "48m³",
+      "purpose": "蟹苗培育",
+      "status": "idle",
+      "disinfectionDate": "2026-05-20",
+      "note": "计划用于三疣梭子蟹夏季苗种"
+    },
+    {
+      "id": "P-06",
+      "name": "育苗池6号",
+      "capacity": "36m³",
+      "purpose": "鱼种培育",
+      "status": "maintenance",
+      "disinfectionDate": "2026-05-15",
+      "note": "排水阀维修中，预计 6 月 16 日恢复"
     }
   ],
   "records": [
