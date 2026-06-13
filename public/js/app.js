@@ -17,7 +17,7 @@ const forms = {
   batch:
     '<h2>新建孵化批次</h2><label>批次号</label><input name="id" required><label>品种</label><input name="species" required><label>亲本池</label><select name="parentPoolId"></select><label>孵化日期</label><input name="hatchDate" type="date" required><label>当前池</label><select name="currentPool"></select><label>估算数量</label><input name="estimatedCount" type="number" required><label>初始成本</label><input name="cost" type="number" required><button>创建批次</button>',
   pond:
-    '<h2>育苗池档案</h2><div class="pond-toolbar"><input id="pondSearch" placeholder="搜索池号或名称..."><select id="pondStatusFilter"><option value="">全部状态</option><option value="active">使用中</option><option value="idle">空闲</option><option value="cleaning">消毒中</option><option value="maintenance">维修中</option></select><div class="spacer"></div><button id="addPondBtn">+ 新增池子</button></div><div class="pond-stats" id="pondStats"></div><div class="grid" id="pondList"></div>',
+    '<h2>育苗池档案</h2><div class="pond-toolbar"><input id="pondSearch" placeholder="搜索池号或名称..."><select id="pondStatusFilter"><option value="">全部状态</option><option value="active">使用中</option><option value="idle">空闲</option><option value="cleaning">消毒中</option><option value="maintenance">维修中</option></select><div class="spacer"></div><button type="button" id="addPondBtn">+ 新增池子</button></div><div class="pond-stats" id="pondStats"></div><div class="grid" id="pondList"></div>',
 };
 
 let db = {};
@@ -195,8 +195,8 @@ function renderPondList() {
           : ""
       }
       <div class="pond-actions">
-        <button class="secondary" data-action="edit">编辑</button>
-        <button data-action="status">修改状态</button>
+        <button type="button" class="secondary" data-action="edit">编辑</button>
+        <button type="button" data-action="status">修改状态</button>
       </div>
     </div>
   `
@@ -205,8 +205,10 @@ function renderPondList() {
 
   list.querySelectorAll(".pond-card").forEach((card) => {
     const id = card.dataset.id;
-    card.querySelector('[data-action="edit"]').onclick = () => openPondModal(id);
-    card.querySelector('[data-action="status"]').onclick = () => openStatusModal(id);
+    const editBtn = card.querySelector('[data-action="edit"]');
+    const statusBtn = card.querySelector('[data-action="status"]');
+    editBtn.onclick = (e) => { e.preventDefault(); openPondModal(id); };
+    statusBtn.onclick = (e) => { e.preventDefault(); openStatusModal(id); };
   });
 }
 
@@ -339,7 +341,7 @@ function bindPondEvents() {
   const addBtn = document.getElementById("addPondBtn");
   const search = document.getElementById("pondSearch");
   const statusFilter = document.getElementById("pondStatusFilter");
-  if (addBtn) addBtn.onclick = () => openPondModal();
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openPondModal(); };
   if (search) search.oninput = renderPondList;
   if (statusFilter) statusFilter.onchange = renderPondList;
 }
@@ -347,11 +349,21 @@ function bindPondEvents() {
 function setTab(tab) {
   activeTab = tab;
   tabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  form.innerHTML = forms[tab];
-  fillSelects();
   if (tab === "pond") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    const pondContainer = document.getElementById("pondContainer");
+    pondContainer.classList.remove("hidden");
+    pondContainer.innerHTML = forms[tab];
+    fillSelects();
     renderPonds();
     bindPondEvents();
+  } else {
+    form.classList.remove("hidden");
+    form.innerHTML = forms[tab];
+    document.getElementById("pondContainer").classList.add("hidden");
+    fillSelects();
+    renderTrace();
   }
 }
 
@@ -370,8 +382,8 @@ tabs.forEach((btn) => (btn.onclick = () => setTab(btn.dataset.tab)));
 batchSelect.onchange = renderTrace;
 document.querySelector("#reload").onclick = load;
 form.onsubmit = async (event) => {
-  if (activeTab === "pond") return;
   event.preventDefault();
+  if (activeTab === "pond") return;
   const data = Object.fromEntries(new FormData(form).entries());
   const path =
     activeTab === "record"
