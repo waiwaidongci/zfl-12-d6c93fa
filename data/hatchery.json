@@ -1,0 +1,60 @@
+{
+  "parentPools": [
+    {
+      "id": "PP-01",
+      "species": "南美白对虾",
+      "count": 320,
+      "note": "春季亲本"
+    }
+  ],
+  "batches": [
+    {
+      "id": "B-260601",
+      "species": "南美白对虾",
+      "parentPoolId": "PP-01",
+      "hatchDate": "2026-06-01",
+      "currentPool": "P-03",
+      "estimatedCount": 850000,
+      "status": "育苗中",
+      "cost": 12600
+    }
+  ],
+  "ponds": [
+    {
+      "id": "P-03",
+      "name": "育苗池3号",
+      "volume": "42m3"
+    },
+    {
+      "id": "P-05",
+      "name": "育苗池5号",
+      "volume": "48m3"
+    }
+  ],
+  "records": [
+    {
+      "id": "REC-1",
+      "batchId": "B-260601",
+      "date": "2026-06-12",
+      "poolId": "P-03",
+      "temperature": 28.2,
+      "salinity": 22,
+      "oxygen": 6.1,
+      "feed": 18,
+      "mortality": 0.8,
+      "abnormal": "无"
+    }
+  ],
+  "transfers": [
+    {
+      "id": "TR-1",
+      "batchId": "B-260601",
+      "fromPool": "孵化桶",
+      "toPool": "P-03",
+      "date": "2026-06-03",
+      "count": 900000,
+      "reason": "初次入池"
+    }
+  ],
+  "sales": []
+}
