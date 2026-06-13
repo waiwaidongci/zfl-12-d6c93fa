@@ -325,6 +325,141 @@ button + button {
   font-size: 20px;
 }
 
+.customer-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.customer-toolbar input,
+.customer-toolbar select {
+  width: auto;
+  min-width: 220px;
+}
+
+.customer-toolbar .spacer {
+  flex: 1;
+}
+
+.customer-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.customer-stats .stat strong {
+  font-size: 20px;
+}
+
+.customer-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.customer-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.customer-card h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--blue);
+}
+
+.customer-card .customer-id {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.customer-card .customer-info {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.customer-card .customer-info .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.customer-card .customer-info .label {
+  color: var(--muted);
+}
+
+.customer-card .customer-purchase {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.customer-card .purchase-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.customer-card .purchase-header .purchase-count {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.customer-card .purchase-batches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customer-batch-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #e8f0ee;
+  color: var(--blue);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.customer-card .customer-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.customer-card .customer-actions button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sale-customer-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
+.sale-customer-row select {
+  flex: 1;
+}
+
+.sale-customer-row button {
+  white-space: nowrap;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
 @media (max-width: 900px) {
   header {
     display: block;
@@ -338,6 +473,9 @@ button + button {
     grid-template-columns: 1fr 1fr;
   }
   .pond-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .customer-stats {
     grid-template-columns: 1fr 1fr;
   }
 }

@@ -96,6 +96,32 @@ export const seedData = {
     },
   ],
   sales: [],
+  customers: [
+    {
+      id: "C-001",
+      name: "青岛海润水产有限公司",
+      contact: "张经理",
+      phone: "13800138001",
+      region: "山东青岛",
+      note: "长期合作客户，主要采购南美白对虾苗",
+    },
+    {
+      id: "C-002",
+      name: "连云港兴渔养殖专业合作社",
+      contact: "李社长",
+      phone: "13900139002",
+      region: "江苏连云港",
+      note: "大型合作社，需求量稳定",
+    },
+    {
+      id: "C-003",
+      name: "温州东海苗种场",
+      contact: "王场长",
+      phone: "13700137003",
+      region: "浙江温州",
+      note: "蟹苗主要客户",
+    },
+  ],
 };
 
 export function getInitialSeed() {

@@ -20,6 +20,7 @@ export function batchTrace(db, batchId) {
     .sort((a, b) => a.date.localeCompare(b.date));
   const sales = db.sales
     .filter((item) => item.batchId === batchId)
+    .map((s) => enrichSale(s, db))
     .sort((a, b) => a.date.localeCompare(b.date));
   const feedCost = records.reduce((sum, item) => sum + Number(item.feed || 0) * 7.8, 0);
   return {
@@ -35,6 +36,27 @@ export function batchTrace(db, batchId) {
       estimatedCost: Math.round((batch.cost || 0) + feedCost),
       soldCount: sum(sales, "count"),
     },
+  };
+}
+
+function enrichSale(sale, db) {
+  const customers = db.customers || [];
+  let customerInfo = null;
+  if (sale.customerId) {
+    const c = customers.find((cu) => cu.id === sale.customerId);
+    if (c) {
+      customerInfo = {
+        id: c.id,
+        name: c.name,
+        contact: c.contact,
+        phone: c.phone,
+        region: c.region,
+      };
+    }
+  }
+  return {
+    ...sale,
+    customerInfo,
   };
 }
 
