@@ -9,7 +9,7 @@ export const seedData = {
       parentPoolId: "PP-01",
       hatchDate: "2026-06-01",
       currentPool: "P-03",
-      estimatedCount: 850000,
+      estimatedCount: 815000,
       status: "育苗中",
       cost: 12600,
     },
@@ -185,7 +185,23 @@ export const seedData = {
     mortality: { yellowMin: 2, redMin: 5 },
     abnormalKeywords: ["死苗", "变色", "发病", "浮头", "白斑", "红体", "溃烂", "停食", "狂游", "沉底"],
   },
-  inventories: [],
+  inventories: [
+    {
+      id: "INV-26061201",
+      batchId: "B-260601",
+      date: "2026-06-12",
+      poolId: "P-03",
+      method: "sampling",
+      manualEstimate: 820000,
+      actualCount: 815000,
+      systemEstimate: 850000,
+      beforeCount: 850000,
+      afterCount: 815000,
+      difference: -35000,
+      operator: "李场长",
+      note: "因前期死亡率偏高，实际数量低于系统估算",
+    },
+  ],
 };
 
 export function getInitialSeed() {

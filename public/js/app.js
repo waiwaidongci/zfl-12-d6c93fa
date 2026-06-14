@@ -52,7 +52,7 @@ const forms = {
   warning:
     '<h2>水质预警中心</h2><div class="warning-toolbar"><select id="warningLevelFilter"><option value="">全部等级</option><option value="red">红色预警</option><option value="yellow">黄色预警</option></select><select id="warningStatusFilter"><option value="">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select><select id="warningBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" class="secondary" id="thresholdConfigBtn">阈值配置</button></div><div class="warning-stats" id="warningStats"></div><div class="grid" id="warningList"></div>',
   order:
-    '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><div class="spacer"></div><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
+    '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><div class="spacer"></div><button type="button" class="secondary" id="quickSaleBtn">快速销售（旧模式）</button><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
   shipment:
     '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
 };
@@ -1883,9 +1883,11 @@ async function deleteOrder(orderId) {
 
 function bindOrderEvents() {
   const addBtn = document.getElementById("addOrderBtn");
+  const quickSaleBtn = document.getElementById("quickSaleBtn");
   const batchFilter = document.getElementById("orderBatchFilter");
   const statusFilter = document.getElementById("orderStatusFilter");
   if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openOrderModal(null, batchSelect.value); };
+  if (quickSaleBtn) quickSaleBtn.onclick = (e) => { e.preventDefault(); setTab("sale"); };
   if (batchFilter) batchFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
   if (statusFilter) statusFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
 }
@@ -2275,6 +2277,8 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
