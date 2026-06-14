@@ -40,6 +40,9 @@ export function batchTrace(db, batchId) {
   const warnings = (db.warnings || [])
     .filter((item) => item.batchId === batchId)
     .sort((a, b) => b.date.localeCompare(a.date));
+  const inventories = (db.inventories || [])
+    .filter((item) => item.batchId === batchId)
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   const initialCost = Number(batch.cost || 0);
   const costSummary = calcCostSummary(costItems);
@@ -53,6 +56,16 @@ export function batchTrace(db, batchId) {
   const grossProfit = salesRevenue - soldCost;
   const grossMargin = salesRevenue > 0 ? Number(((grossProfit / salesRevenue) * 100).toFixed(2)) : 0;
 
+  const inventoryStats = inventories.length > 0 ? {
+    totalAdjustments: inventories.length,
+    lastInventoryDate: inventories[inventories.length - 1].date,
+    totalDifference: sum(inventories, "difference"),
+  } : {
+    totalAdjustments: 0,
+    lastInventoryDate: null,
+    totalDifference: 0,
+  };
+
   return {
     batch,
     records,
@@ -60,6 +73,7 @@ export function batchTrace(db, batchId) {
     sales,
     costItems,
     warnings,
+    inventories,
     summary: {
       averageTemperature: avg(records, "temperature"),
       averageOxygen: avg(records, "oxygen"),
@@ -76,6 +90,7 @@ export function batchTrace(db, batchId) {
       soldCost: Number(soldCost.toFixed(2)),
       grossProfit: Number(grossProfit.toFixed(2)),
       grossMargin,
+      inventoryStats,
     },
   };
 }

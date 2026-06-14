@@ -10,7 +10,7 @@
     <header>
       <div>
         <h1>海水养殖苗种场追踪</h1>
-        <div class="meta">亲本、孵化批次、育苗池档案、水质投喂、分池出苗</div>
+        <div class="meta">亲本、孵化批次、育苗池档案、水质投喂、分池出苗、盘点校准</div>
       </div>
       <button id="reload">刷新</button>
     </header>
@@ -20,6 +20,7 @@
           <button data-tab="record" class="active">每日记录</button>
           <button data-tab="transfer">分池合池</button>
           <button data-tab="sale">出苗销售</button>
+          <button data-tab="inventory">盘点校准</button>
           <button data-tab="cost">成本录入</button>
           <button data-tab="warning" style="background:#a84e35;">预警中心</button>
           <button data-tab="batch">新建批次</button>
@@ -27,6 +28,7 @@
           <button data-tab="customer">客户档案</button>
         </div>
         <form id="recordForm"></form>
+        <div id="inventoryContainer" class="hidden"></div>
         <div id="pondContainer" class="hidden"></div>
         <div id="customerContainer" class="hidden"></div>
         <div id="costContainer" class="hidden"></div>

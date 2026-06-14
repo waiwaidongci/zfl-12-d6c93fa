@@ -20,6 +20,11 @@ const WARNING_STATUS = {
   ignored: { label: "已忽略", class: "status-idle" },
 };
 
+const INVENTORY_METHODS = {
+  sampling: { label: "抽样估算" },
+  full: { label: "实际盘点" },
+};
+
 const forms = {
   record:
     '<h2>每日水质和投喂</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>池号</label><select name="poolId"></select><label>水温</label><input name="temperature" type="number" step="0.1" required><label>盐度</label><input name="salinity" type="number" step="0.1" required><label>溶氧</label><input name="oxygen" type="number" step="0.1" required><label>投喂量kg</label><input name="feed" type="number" step="0.1" required><label>死亡率%</label><input name="mortality" type="number" step="0.1" required><label>异常情况</label><textarea name="abnormal"></textarea><button>保存记录</button>',
@@ -27,6 +32,8 @@ const forms = {
     '<h2>分池合池</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>来源池</label><select name="fromPool"></select><label>目标池</label><select name="toPool"></select><label>数量</label><input name="count" type="number" required><label>原因</label><textarea name="reason"></textarea><button>保存流转</button>',
   sale:
     '<h2>出苗销售</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>客户</label><div class="sale-customer-row"><select name="customerId" id="saleCustomerSelect"><option value="">请选择客户（选填）</option></select><button type="button" class="secondary" id="quickAddCustomerBtn">+ 新客户</button></div><div id="saleCustomerNameWrap"><label>或直接输入客户名称</label><input name="customer" id="saleCustomerName" placeholder="手动输入客户名称"></div><label>数量</label><input name="count" type="number" required><label>单价</label><input name="unitPrice" type="number" step="0.0001" required><button>记录销售</button>',
+  inventory:
+    '<h2>批次盘点校准</h2><div class="inventory-toolbar"><select id="inventoryBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addInventoryBtn">+ 新增盘点</button></div><div class="inventory-stats" id="inventoryStats"></div><div class="grid" id="inventoryList"></div>',
   cost:
     '<h2>成本项目录入</h2><div class="cost-toolbar"><select id="costBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addCostBtn">+ 新增成本</button></div><div class="cost-stats" id="costStats"></div><div class="grid" id="costList"></div>',
   batch:
@@ -48,6 +55,7 @@ const batchSelect = document.querySelector("#batchSelect");
 const statsEl = document.querySelector("#stats");
 const timelineEl = document.querySelector("#timeline");
 const batchInfo = document.querySelector("#batchInfo");
+const inventoryContainer = document.querySelector("#inventoryContainer");
 
 async function api(path, options) {
   const res = await fetch(
@@ -97,6 +105,13 @@ function fillSelects() {
 
   batchSelect.innerHTML = db.batches.map((b) => `<option>${b.id}</option>`).join("");
   if (!batchSelect.value && db.batches[0]) batchSelect.value = db.batches[0].id;
+
+  const batchFilterOptions = db.batches.map((b) => `<option value="${b.id}">${b.id}</option>`).join("");
+  document.querySelectorAll("#inventoryBatchFilter, #costBatchFilter, #warningBatchFilter").forEach((s) => {
+    const currentValue = s.value;
+    s.innerHTML = '<option value="">全部批次</option>' + batchFilterOptions;
+    if (currentValue) s.value = currentValue;
+  });
 }
 
 async function renderTrace() {
@@ -116,6 +131,9 @@ async function renderTrace() {
     (cat) => `<div class="row"><span class="label">${cat}</span><span>${(s.costByCategory?.[cat] || 0).toFixed(2)} 元</span></div>`
   ).join("");
 
+  const invStats = s.inventoryStats || {};
+  const diffClass = invStats.totalDifference >= 0 ? "" : "warning";
+
   statsEl.innerHTML = `
     <div class="stat"><span>均温</span><strong>${s.averageTemperature}℃</strong></div>
     <div class="stat"><span>均溶氧</span><strong>${s.averageOxygen}</strong></div>
@@ -130,6 +148,9 @@ async function renderTrace() {
     <div class="stat"><span>售出成本</span><strong>${s.soldCost.toFixed(2)} 元</strong></div>
     <div class="stat"><span>销售毛利</span><strong class="${profitClass}">${s.grossProfit.toFixed(2)} 元</strong></div>
     <div class="stat"><span>毛利率</span><strong class="${profitClass}">${s.grossMargin.toFixed(2)}%</strong></div>
+    <div class="stat"><span>盘点校准次数</span><strong>${invStats.totalAdjustments || 0} 次</strong></div>
+    ${invStats.lastInventoryDate ? `<div class="stat"><span>最后盘点日期</span><strong>${invStats.lastInventoryDate}</strong></div>` : ""}
+    ${invStats.totalAdjustments > 0 ? `<div class="stat"><span>累计校准差异</span><strong class="${diffClass}">${invStats.totalDifference >= 0 ? "+" : ""}${invStats.totalDifference.toLocaleString()} 尾</strong></div>` : ""}
   `;
 
   const events = [
@@ -189,6 +210,22 @@ async function renderTrace() {
       warningHandler: e.handler,
       warningNote: e.handleNote,
     })),
+    ...(trace.inventories || []).map((e) => ({
+      date: e.date,
+      title: "盘点校准",
+      detail:
+        "方式：" + (INVENTORY_METHODS[e.method]?.label || e.method) +
+        "，抽样估算：" + e.manualEstimate.toLocaleString() + "尾" +
+        "，实际盘点：" + e.actualCount.toLocaleString() + "尾" +
+        "，系统估算：" + e.systemEstimate.toLocaleString() + "尾" +
+        "，差异：" + (e.difference >= 0 ? "+" : "") + e.difference.toLocaleString() + "尾" +
+        (e.operator ? "，盘点人：" + e.operator : "") +
+        (e.note ? "，备注：" + e.note : ""),
+      inventoryId: e.id,
+      inventoryBefore: e.beforeCount,
+      inventoryAfter: e.afterCount,
+      inventoryDiff: e.difference,
+    })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
   timelineEl.innerHTML = events
@@ -210,6 +247,30 @@ async function renderTrace() {
               ${extraHtml}
               <div class="event-warning-actions">
                 ${e.warningStatus === "pending" || e.warningStatus === "processing" ? `<button type="button" class="secondary tiny" data-action="handle-warning">处理预警</button>` : ""}
+              </div>
+            </div>`;
+        }
+        if (e.inventoryId) {
+          const diffClass = e.inventoryDiff >= 0 ? "" : "warning";
+          const arrow = e.inventoryDiff >= 0 ? "↑" : "↓";
+          return `
+            <div class="event event-inventory" data-inventory-id="${e.inventoryId}">
+              <b>${e.date} · ${e.title}</b>
+              <div class="meta">${e.detail}</div>
+              <div class="inventory-change-row">
+                <div class="inventory-change-item">
+                  <span class="label">校准前</span>
+                  <strong>${e.inventoryBefore.toLocaleString()} 尾</strong>
+                </div>
+                <div class="inventory-change-arrow ${diffClass}">${arrow}</div>
+                <div class="inventory-change-item">
+                  <span class="label">校准后</span>
+                  <strong>${e.inventoryAfter.toLocaleString()} 尾</strong>
+                </div>
+                <div class="inventory-change-item">
+                  <span class="label">差异</span>
+                  <strong class="${diffClass}">${e.inventoryDiff >= 0 ? "+" : ""}${e.inventoryDiff.toLocaleString()} 尾</strong>
+                </div>
               </div>
             </div>`;
         }
@@ -664,6 +725,211 @@ function bindCustomerEvents() {
   const search = document.getElementById("customerSearch");
   if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openCustomerModal(); };
   if (search) search.oninput = renderCustomerList;
+}
+
+function renderInventoryStats() {
+  const inventories = db.inventories || [];
+  const batchFilter = document.getElementById("inventoryBatchFilter")?.value || "";
+  let filtered = inventories;
+  if (batchFilter) {
+    filtered = inventories.filter((i) => i.batchId === batchFilter);
+  }
+
+  const totalRecords = filtered.length;
+  const totalDifference = filtered.reduce((sum, i) => sum + Number(i.difference || 0), 0);
+  const avgDiffPercent = totalRecords > 0
+    ? (filtered.reduce((sum, i) => {
+        const sysEst = Number(i.systemEstimate || 0);
+        const diff = Number(i.difference || 0);
+        return sum + (sysEst > 0 ? (diff / sysEst) * 100 : 0);
+      }, 0) / totalRecords).toFixed(2)
+    : 0;
+
+  const stats = [
+    ["盘点记录数", totalRecords + " 次"],
+    ["累计差异", (totalDifference >= 0 ? "+" : "") + totalDifference.toLocaleString() + " 尾"],
+    ["平均差异率", avgDiffPercent + "%"],
+  ];
+
+  document.getElementById("inventoryStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
+    .join("");
+}
+
+function renderInventoryList() {
+  const inventories = db.inventories || [];
+  const batchFilter = document.getElementById("inventoryBatchFilter")?.value || "";
+  let filtered = inventories;
+  if (batchFilter) {
+    filtered = inventories.filter((i) => i.batchId === batchFilter);
+  }
+  filtered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+
+  const list = document.getElementById("inventoryList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无盘点记录，点击右上角「新增盘点」添加</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered
+    .map((inv) => {
+      const diffClass = inv.difference >= 0 ? "" : "warning";
+      const methodLabel = INVENTORY_METHODS[inv.method]?.label || inv.method;
+      const batch = db.batches?.find((b) => b.id === inv.batchId);
+      const species = batch?.species || "";
+      return `
+    <div class="inventory-card" data-id="${inv.id}">
+      <div class="inventory-header">
+        <span class="status-badge ${inv.method === "full" ? "status-active" : "status-cleaning"}">${methodLabel}</span>
+        <span class="inventory-batch">${inv.batchId}${species ? " · " + species : ""}</span>
+      </div>
+      <div class="inventory-id">${inv.id}${inv.poolId ? " · 池号 " + inv.poolId : ""}</div>
+      <div class="inventory-info">
+        ${inv.date ? `<div class="row"><span class="label">日期</span><span>${inv.date}</span></div>` : ""}
+        <div class="row"><span class="label">系统估算</span><span>${inv.systemEstimate.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">抽样估算</span><span>${inv.manualEstimate.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">实际盘点</span><span><strong>${inv.actualCount.toLocaleString()} 尾</strong></span></div>
+        <div class="row"><span class="label">差异</span><span><strong class="${diffClass}">${inv.difference >= 0 ? "+" : ""}${inv.difference.toLocaleString()} 尾</strong></span></div>
+      </div>
+      ${
+        inv.operator || inv.note
+          ? `<div class="meta" style="margin-top:8px;font-size:12px;">${inv.operator ? "盘点人：" + inv.operator : ""}${inv.note ? (inv.operator ? " · " : "") + "备注：" + inv.note : ""}</div>`
+          : ""
+      }
+      <div class="inventory-change-row">
+        <div class="inventory-change-item">
+          <span class="label">校准前</span>
+          <strong>${inv.beforeCount.toLocaleString()}</strong>
+        </div>
+        <div class="inventory-change-arrow ${diffClass}">${inv.difference >= 0 ? "↑" : "↓"}</div>
+        <div class="inventory-change-item">
+          <span class="label">校准后</span>
+          <strong>${inv.afterCount.toLocaleString()}</strong>
+        </div>
+      </div>
+      <div class="inventory-actions">
+        <button type="button" class="danger" data-action="delete">删除</button>
+      </div>
+    </div>
+  `;
+    })
+    .join("");
+
+  list.querySelectorAll(".inventory-card").forEach((card) => {
+    const id = card.dataset.id;
+    const deleteBtn = card.querySelector('[data-action="delete"]');
+    deleteBtn.onclick = (e) => { e.preventDefault(); deleteInventory(id); };
+  });
+}
+
+function renderInventories() {
+  const batchFilter = document.getElementById("inventoryBatchFilter");
+  if (batchFilter && db.batches) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    batchFilter.value = currentVal;
+  }
+  renderInventoryStats();
+  renderInventoryList();
+}
+
+function openInventoryModal(prefillBatchId = null) {
+  const batches = db.batches || [];
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>新增盘点校准</h2>
+      <form id="inventoryForm">
+        <label>批次</label>
+        <select name="batchId" id="invBatchSelect" required>
+          ${batches
+            .map(
+              (b) =>
+                `<option value="${b.id}" ${prefillBatchId === b.id ? "selected" : ""}>${b.id} · ${b.species} · 当前估算 ${b.estimatedCount.toLocaleString()} 尾</option>`
+            )
+            .join("")}
+        </select>
+        <label>日期</label>
+        <input name="date" type="date" required value="${new Date().toISOString().split("T")[0]}">
+        <label>池号</label>
+        <select name="poolId" id="invPoolSelect">
+          ${db.ponds
+            .filter((p) => p.status !== "maintenance")
+            .map((p) => `<option value="${p.id}">${p.name} (${p.id})</option>`)
+            .join("")}
+        </select>
+        <label>盘点方式</label>
+        <select name="method">
+          <option value="sampling">抽样估算</option>
+          <option value="full">实际盘点</option>
+        </select>
+        <label>人工抽样估算数（尾）</label>
+        <input name="manualEstimate" type="number" required placeholder="通过抽样估算的数量">
+        <label>实际盘点数（尾）</label>
+        <input name="actualCount" type="number" required placeholder="实际点数或称重换算的数量">
+        <label>盘点人</label>
+        <input name="operator" placeholder="选填">
+        <label>备注</label>
+        <textarea name="note" placeholder="盘点过程说明、差异原因分析等"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">保存盘点</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const updatePoolSelect = () => {
+    const batchSelect = modal.querySelector("#invBatchSelect");
+    const poolSelect = modal.querySelector("#invPoolSelect");
+    const selectedBatch = batches.find((b) => b.id === batchSelect.value);
+    if (selectedBatch && selectedBatch.currentPool) {
+      poolSelect.value = selectedBatch.currentPool;
+    }
+  };
+
+  modal.querySelector("#invBatchSelect").onchange = updatePoolSelect;
+  updatePoolSelect();
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+  modal.querySelector("#inventoryForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      await api("/api/inventories", { method: "POST", body: JSON.stringify(data) });
+      modal.remove();
+      await load();
+      alert("盘点校准已保存，批次估算数量已更新");
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+async function deleteInventory(inventoryId) {
+  const inventory = (db.inventories || []).find((i) => i.id === inventoryId);
+  if (!inventory) return;
+  if (!confirm("确定要删除这条盘点记录吗？删除后批次估算数量将回退到上一次盘点校准后的值。")) return;
+  try {
+    await api("/api/inventories/" + inventoryId, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function bindInventoryEvents() {
+  const addBtn = document.getElementById("addInventoryBtn");
+  const batchFilter = document.getElementById("inventoryBatchFilter");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openInventoryModal(batchSelect.value); };
+  if (batchFilter) batchFilter.onchange = () => { renderInventoryStats(); renderInventoryList(); };
 }
 
 function renderCostStats() {
@@ -1352,6 +1618,18 @@ function setTab(tab) {
     fillSelects();
     renderCustomers();
     bindCustomerEvents();
+  } else if (tab === "inventory") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    inventoryContainer.classList.remove("hidden");
+    inventoryContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderInventories();
+    bindInventoryEvents();
   } else if (tab === "cost") {
     form.innerHTML = "";
     form.classList.add("hidden");
@@ -1383,6 +1661,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
       bindSaleEvents();
@@ -1397,6 +1676,7 @@ async function load() {
   if (!db.costItems) db.costItems = [];
   if (!db.warnings) db.warnings = [];
   if (!db.warningThresholds) db.warningThresholds = {};
+  if (!db.inventories) db.inventories = [];
   try {
     const enrichedCustomers = await api("/api/customers");
     db.customers = enrichedCustomers;
@@ -1410,6 +1690,9 @@ async function load() {
   } else if (activeTab === "customer") {
     renderCustomers();
     bindCustomerEvents();
+  } else if (activeTab === "inventory") {
+    renderInventories();
+    bindInventoryEvents();
   } else if (activeTab === "cost") {
     renderCosts();
     bindCostEvents();

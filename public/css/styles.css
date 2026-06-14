@@ -958,6 +958,117 @@ button.tiny {
   opacity: 0.5;
 }
 
+.event-inventory {
+  border-left: 3px solid var(--green);
+  background: #f5f9f7;
+}
+
+.inventory-change-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #eef5f4;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.inventory-change-item {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+}
+
+.inventory-change-item .label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.inventory-change-item strong {
+  display: block;
+  font-size: 16px;
+}
+
+.inventory-change-arrow {
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--green);
+}
+
+.inventory-change-arrow.warning {
+  color: var(--warn);
+}
+
+.inventory-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.inventory-toolbar select {
+  max-width: 200px;
+}
+
+.inventory-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.inventory-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inventory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.inventory-batch {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.inventory-id {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.inventory-info {
+  margin-top: 6px;
+}
+
+.inventory-info .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.inventory-info .label {
+  color: var(--muted);
+}
+
+.inventory-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;
@@ -986,6 +1097,9 @@ button.tiny {
     grid-template-columns: 1fr 1fr;
   }
   .warning-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .inventory-stats {
     grid-template-columns: 1fr 1fr;
   }
 }

@@ -182,6 +182,7 @@ export const seedData = {
     mortality: { yellowMin: 2, redMin: 5 },
     abnormalKeywords: ["死苗", "变色", "发病", "浮头", "白斑", "红体", "溃烂", "停食", "狂游", "沉底"],
   },
+  inventories: [],
 };
 
 export function getInitialSeed() {

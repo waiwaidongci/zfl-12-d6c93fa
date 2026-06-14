@@ -14,7 +14,7 @@
       "parentPoolId": "PP-01",
       "hatchDate": "2026-06-01",
       "currentPool": "P-03",
-      "estimatedCount": 850000,
+      "estimatedCount": 815000,
       "status": "育苗中",
       "cost": 12600
     }
@@ -87,42 +87,6 @@
       "feed": 18,
       "mortality": 0.8,
       "abnormal": "无"
-    },
-    {
-      "id": "REC-1781398052933",
-      "batchId": "B-260601",
-      "date": "2026-06-14",
-      "poolId": "P-03",
-      "temperature": 36,
-      "salinity": 22,
-      "oxygen": 2.8,
-      "feed": 15,
-      "mortality": 6,
-      "abnormal": "发现死苗和白斑"
-    },
-    {
-      "id": "REC-1781398717250",
-      "batchId": "B-260601",
-      "date": "2026-06-14",
-      "poolId": "P-03",
-      "temperature": 26.5,
-      "salinity": 23,
-      "oxygen": 6.2,
-      "feed": 16,
-      "mortality": 0.5,
-      "abnormal": "无"
-    },
-    {
-      "id": "REC-1781398993451",
-      "batchId": "B-260601",
-      "date": "2026-06-14",
-      "poolId": "P-03",
-      "temperature": 36.5,
-      "salinity": 38,
-      "oxygen": 2.2,
-      "feed": 12,
-      "mortality": 8.5,
-      "abnormal": "发现大量死苗、白斑、红体"
     }
   ],
   "transfers": [
@@ -136,25 +100,7 @@
       "reason": "初次入池"
     }
   ],
-  "sales": [
-    {
-      "id": "SALE-1781393964236",
-      "batchId": "B-260601",
-      "date": "2026-06-15",
-      "customerId": "C-001",
-      "customer": "青岛海润水产有限公司",
-      "count": 50000,
-      "unitPrice": 0.08
-    },
-    {
-      "id": "SALE-1781393980427",
-      "batchId": "B-260601",
-      "date": "2026-06-16",
-      "customer": "张三个体户",
-      "count": 10000,
-      "unitPrice": 0.09
-    }
-  ],
+  "sales": [],
   "costItems": [
     {
       "id": "COST-1",
@@ -233,88 +179,7 @@
       "note": "蟹苗主要客户"
     }
   ],
-  "warnings": [
-    {
-      "id": "WARN-1781398052933-v31j",
-      "batchId": "B-260601",
-      "recordId": "REC-1781398052933",
-      "poolId": "P-03",
-      "date": "2026-06-14",
-      "level": "red",
-      "reasons": [
-        "水温36℃（红色阈值）",
-        "溶氧2.8（红色阈值）",
-        "死亡率6%（红色阈值）",
-        "异常文本含关键词：死苗、白斑"
-      ],
-      "status": "processing",
-      "handler": "张师傅",
-      "handleNote": "已开始加氧和降温处理",
-      "handleDate": "2026-06-14",
-      "processingAt": "2026-06-14T00:47:50.037Z",
-      "resolvedAt": "",
-      "createdAt": "2026-06-14T00:47:32.933Z"
-    },
-    {
-      "id": "WARN-1781398717251-rxuj",
-      "batchId": "B-260601",
-      "recordId": "REC-1781398717250",
-      "poolId": "P-03",
-      "date": "2026-06-14",
-      "level": "",
-      "reasons": [
-        "数据已更新，原触发条件不再满足"
-      ],
-      "status": "resolved",
-      "handler": "李师傅",
-      "handleNote": "已开启增氧机并换水",
-      "handleDate": "2026-06-14",
-      "processingAt": "2026-06-14T00:59:34.655Z",
-      "resolvedAt": "2026-06-14T01:00:18.554Z",
-      "autoResolved": true,
-      "handleHistory": [
-        {
-          "fromStatus": "pending",
-          "toStatus": "processing",
-          "handler": "李师傅",
-          "note": "已开启增氧机并换水",
-          "at": "2026-06-14T00:59:34.655Z"
-        },
-        {
-          "fromStatus": "resolved",
-          "toStatus": "resolved",
-          "handler": "系统自动",
-          "note": "数据更新后阈值不再触发，自动解除预警",
-          "at": "2026-06-14T01:00:18.554Z"
-        }
-      ],
-      "createdAt": "2026-06-14T00:58:37.251Z"
-    },
-    {
-      "id": "WARN-1781398993452-5sm1",
-      "batchId": "B-260601",
-      "recordId": "REC-1781398993451",
-      "poolId": "P-03",
-      "date": "2026-06-14",
-      "level": "red",
-      "reasons": [
-        "水温36.5℃（红色阈值）",
-        "盐度38（红色阈值）",
-        "溶氧2.2（红色阈值）",
-        "死亡率8.5%（红色阈值）",
-        "异常文本含关键词：死苗、白斑、红体"
-      ],
-      "status": "pending",
-      "handler": "",
-      "handleNote": "",
-      "handleDate": "",
-      "processingAt": "",
-      "resolvedAt": "",
-      "autoResolved": false,
-      "handleHistory": [],
-      "createdAt": "2026-06-14T01:03:13.452Z"
-    }
-  ],
+  "warnings": [],
   "warningThresholds": {
     "temperature": {
       "yellowMin": 20,
@@ -348,5 +213,22 @@
       "狂游",
       "沉底"
     ]
-  }
+  },
+  "inventories": [
+    {
+      "id": "INV-1781411487638",
+      "batchId": "B-260601",
+      "date": "2026-06-14",
+      "poolId": "P-03",
+      "method": "sampling",
+      "manualEstimate": 820000,
+      "actualCount": 815000,
+      "systemEstimate": 850000,
+      "beforeCount": 850000,
+      "afterCount": 815000,
+      "difference": -35000,
+      "operator": "李场长",
+      "note": "因前期死亡率偏高，实际数量低于系统估算"
+    }
+  ]
 }
