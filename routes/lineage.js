@@ -67,8 +67,6 @@ function buildLineageGraph(db, batchId, farmId) {
 
   const nodes = new Map();
   const edges = [];
-  const visitedAncestors = new Set();
-  const visitedDescendants = new Set();
   const edgeSet = new Set();
 
   function addNode(bid) {
@@ -90,55 +88,69 @@ function buildLineageGraph(db, batchId, farmId) {
     edges.push({ from, to, ...edgeData });
   }
 
-  function traverseAncestors(bid, depth) {
+  function traverseAncestors(bid, depth, beforeDate, visitedLineagePath) {
     if (depth > 20) return;
     const parentLineages = lineages.filter((l) =>
-      l.targets.some((t) => t.batchId === bid) && !visitedAncestors.has(l.id)
+      l.targets.some((t) => t.batchId === bid) &&
+      !visitedLineagePath.has(l.id) &&
+      (!beforeDate || l.date <= beforeDate)
     );
     for (const lin of parentLineages) {
-      visitedAncestors.add(lin.id);
+      visitedLineagePath.add(lin.id);
+      const currentTgt = lin.targets.find((t) => t.batchId === bid);
+      const currentReceivedRatio = currentTgt ? currentTgt.ratio : 1;
       for (const src of lin.sources) {
         if (src.batchId === bid) continue;
         addNode(src.batchId);
+        const edgeCount = currentTgt
+          ? Math.round(src.contributionCount * currentReceivedRatio)
+          : src.contributionCount;
         addEdge(src.batchId, bid, {
           type: lin.type,
           lineageId: lin.id,
-          contributionCount: src.contributionCount,
+          contributionCount: edgeCount,
           ratio: src.ratio,
           date: lin.date,
           reason: lin.reason,
         });
-        traverseAncestors(src.batchId, depth + 1);
+        traverseAncestors(src.batchId, depth + 1, lin.date, new Set(visitedLineagePath));
       }
     }
   }
 
-  function traverseDescendants(bid, depth) {
+  function traverseDescendants(bid, depth, afterDate, visitedLineagePath) {
     if (depth > 20) return;
     const childLineages = lineages.filter((l) =>
-      l.sources.some((s) => s.batchId === bid) && !visitedDescendants.has(l.id)
+      l.sources.some((s) => s.batchId === bid) &&
+      !visitedLineagePath.has(l.id) &&
+      (!afterDate || l.date >= afterDate)
     );
     for (const lin of childLineages) {
-      visitedDescendants.add(lin.id);
+      visitedLineagePath.add(lin.id);
+      const currentSrc = lin.sources.find((s) => s.batchId === bid);
+      const currentContributionRatio = currentSrc ? currentSrc.ratio : 1;
       for (const tgt of lin.targets) {
         if (tgt.batchId === bid) continue;
         addNode(tgt.batchId);
+        const edgeCount = currentSrc
+          ? Math.round(tgt.receivedCount * currentContributionRatio)
+          : tgt.receivedCount;
         addEdge(bid, tgt.batchId, {
           type: lin.type,
           lineageId: lin.id,
-          contributionCount: tgt.receivedCount,
+          contributionCount: edgeCount,
           ratio: tgt.ratio,
           date: lin.date,
           reason: lin.reason,
         });
-        traverseDescendants(tgt.batchId, depth + 1);
+        traverseDescendants(tgt.batchId, depth + 1, lin.date, new Set(visitedLineagePath));
       }
     }
   }
 
   addNode(batchId);
-  traverseAncestors(batchId, 0);
-  traverseDescendants(batchId, 0);
+  traverseAncestors(batchId, 0, null, new Set());
+  traverseDescendants(batchId, 0, null, new Set());
 
   return {
     rootBatchId: batchId,
@@ -154,12 +166,13 @@ function computeContribution(db, batchId, farmId) {
 
   const contributions = [];
 
-  function trace(bid, ratio, path, visitedBatches) {
+  function trace(bid, ratio, path, visitedBatches, beforeDate) {
     if (visitedBatches.has(bid)) return;
     visitedBatches.add(bid);
 
     const parentLineages = lineages.filter((l) =>
-      l.targets.some((t) => t.batchId === bid)
+      l.targets.some((t) => t.batchId === bid) &&
+      (!beforeDate || l.date <= beforeDate)
     );
 
     const hasRealParent = parentLineages.some((l) =>
@@ -195,12 +208,12 @@ function computeContribution(db, batchId, farmId) {
         const srcRatio = src.ratio || 0;
         if (srcRatio <= 0) continue;
         const newPath = [...path, { lineageId: lin.id, type: lin.type, date: lin.date }];
-        trace(src.batchId, ratio * srcRatio, newPath, new Set(visitedBatches));
+        trace(src.batchId, ratio * srcRatio, newPath, new Set(visitedBatches), lin.date);
       }
     }
   }
 
-  trace(batchId, 1, [], new Set());
+  trace(batchId, 1, [], new Set(), null);
 
   let totalRatio = contributions.reduce((s, c) => s + c.ratio, 0);
   if (totalRatio > 0) {
@@ -263,7 +276,7 @@ export function migrateTransfersToLineage(db) {
   return migratedCount;
 }
 
-function validateNoCycle(db, sources, targets, type) {
+function validateNoCycle(db, sources, targets, type, date) {
   const targetIds = targets.map((t) => t.batchId);
   const sourceIds = sources.map((s) => s.batchId);
   const lineages = db.lineages || [];
@@ -273,57 +286,67 @@ function validateNoCycle(db, sources, targets, type) {
     return `操作无效：来源和目标不能都是同一个批次`;
   }
 
-  const visited = new Set();
-  const queue = targetIds.filter(tid => !sourceIds.includes(tid));
+  const visitedDown = new Map();
+  const downQueue = [];
+  for (const tid of targetIds) {
+    if (!sourceIds.includes(tid)) {
+      downQueue.push({ id: tid, minDate: date });
+      visitedDown.set(tid, date);
+    }
+  }
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (visited.has(current)) continue;
-    visited.add(current);
+  while (downQueue.length > 0) {
+    const { id: current, minDate } = downQueue.shift();
 
     if (sourceIds.includes(current)) {
-      return `存在循环依赖：${current} 会形成闭环血缘链`;
+      return `存在循环依赖：目标批次 ${targetIds.join(",")} 通过 ${date} 之后的血缘链追溯到来源批次 ${current}，会形成闭环`;
     }
 
     const childLineages = lineages.filter((l) =>
-      l.sources.some((s) => s.batchId === current)
+      l.sources.some((s) => s.batchId === current) &&
+      l.date >= minDate
     );
 
     for (const lin of childLineages) {
       for (const tgt of lin.targets) {
-        const realTargets = lin.targets.filter(t => t.batchId !== current).map(t => t.batchId);
-        for (const rt of realTargets) {
-          if (!visited.has(rt) && !sourceIds.includes(rt)) {
-            queue.push(rt);
-          }
+        if (tgt.batchId === current) continue;
+        const existing = visitedDown.get(tgt.batchId);
+        if (!existing || existing > lin.date) {
+          visitedDown.set(tgt.batchId, lin.date);
+          downQueue.push({ id: tgt.batchId, minDate: lin.date });
         }
       }
     }
   }
 
-  const visitedAncestors = new Set();
-  const ancestorQueue = sourceIds.filter(sid => !targetIds.includes(sid));
+  const visitedUp = new Map();
+  const upQueue = [];
+  for (const sid of sourceIds) {
+    if (!targetIds.includes(sid)) {
+      upQueue.push({ id: sid, maxDate: date });
+      visitedUp.set(sid, date);
+    }
+  }
 
-  while (ancestorQueue.length > 0) {
-    const current = ancestorQueue.shift();
-    if (visitedAncestors.has(current)) continue;
-    visitedAncestors.add(current);
+  while (upQueue.length > 0) {
+    const { id: current, maxDate } = upQueue.shift();
 
     if (targetIds.includes(current)) {
-      return `存在循环依赖：${current} 会形成闭环血缘链`;
+      return `存在循环依赖：来源批次 ${sourceIds.join(",")} 通过 ${date} 之前的血缘链追溯到目标批次 ${current}，会形成闭环`;
     }
 
     const parentLineages = lineages.filter((l) =>
-      l.targets.some((t) => t.batchId === current)
+      l.targets.some((t) => t.batchId === current) &&
+      l.date <= maxDate
     );
 
     for (const lin of parentLineages) {
       for (const src of lin.sources) {
-        const realSources = lin.sources.filter(s => s.batchId !== current).map(s => s.batchId);
-        for (const rs of realSources) {
-          if (!visitedAncestors.has(rs) && !targetIds.includes(rs)) {
-            ancestorQueue.push(rs);
-          }
+        if (src.batchId === current) continue;
+        const existing = visitedUp.get(src.batchId);
+        if (!existing || existing < lin.date) {
+          visitedUp.set(src.batchId, lin.date);
+          upQueue.push({ id: src.batchId, maxDate: lin.date });
         }
       }
     }
@@ -334,7 +357,6 @@ function validateNoCycle(db, sources, targets, type) {
 
 function validateDateOrder(db, sources, targets, date) {
   const allBatchIds = [...sources.map((s) => s.batchId), ...targets.map((t) => t.batchId)];
-  const lineages = db.lineages || [];
 
   for (const bid of allBatchIds) {
     const batch = db.batches.find((b) => b.id === bid);
@@ -342,13 +364,26 @@ function validateDateOrder(db, sources, targets, date) {
       return `批次 ${bid} 的孵化日期为 ${batch.hatchDate}，血缘操作日期不能早于孵化日期`;
     }
 
-    const futureLineages = lineages.filter((l) =>
-      (l.sources.some((s) => s.batchId === bid) || l.targets.some((t) => t.batchId === bid)) &&
-      l.date > date
-    );
+    const sourceBatches = sources.map((s) => s.batchId);
+    if (sourceBatches.includes(bid)) {
+      const createdAfter = (db.lineages || []).filter((l) =>
+        l.targets.some((t) => t.batchId === bid) &&
+        l.date > date
+      );
+      if (createdAfter.length > 0) {
+        return `来源批次 ${bid} 在 ${date} 之后还有 ${createdAfter.length} 次接收血缘的记录，时间顺序矛盾（批次还没完全形成就被拿来作为来源）`;
+      }
+    }
 
-    if (futureLineages.length > 0) {
-      return `批次 ${bid} 已有 ${futureLineages.length} 条血缘记录晚于当前操作日期 ${date}，请检查日期顺序`;
+    const targetBatches = targets.map((t) => t.batchId);
+    if (targetBatches.includes(bid)) {
+      const contributedBefore = (db.lineages || []).filter((l) =>
+        l.sources.some((s) => s.batchId === bid) &&
+        l.date < date
+      );
+      if (contributedBefore.length > 0) {
+        return `目标批次 ${bid} 在 ${date} 之前已有 ${contributedBefore.length} 次作为来源贡献的记录，时间顺序矛盾（批次还没形成就已经贡献了）`;
+      }
     }
   }
 
@@ -426,7 +461,7 @@ export function createLineageRouter(helpers) {
 
       const totalSourceCount = input.sources.reduce((s, src) => s + Number(src.contributionCount || 0), 0);
       const totalTargetCount = input.targets.reduce((s, tgt) => s + Number(tgt.receivedCount || 0), 0);
-      const cycleError = validateNoCycle(db, input.sources, input.targets, input.type);
+      const cycleError = validateNoCycle(db, input.sources, input.targets, input.type, input.date);
       if (cycleError) {
         return sendJson(res, 400, { error: cycleError });
       }

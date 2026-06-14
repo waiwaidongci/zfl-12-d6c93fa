@@ -3202,25 +3202,39 @@ function renderLineageGraphSVG(container, graph) {
   const nodeGap = 30;
 
   const levels = new Map();
-  function computeLevel(nodeId, visited = new Set()) {
-    if (levels.has(nodeId)) return levels.get(nodeId);
-    if (visited.has(nodeId)) return 0;
-    visited.add(nodeId);
-    const parentEdges = graph.edges.filter((e) => e.to === nodeId);
-    if (parentEdges.length === 0) {
-      levels.set(nodeId, 0);
-      return 0;
+
+  const rootId = graph.rootBatchId;
+  const rootBatch = (db.batches || []).find(b => b.id === rootId);
+  const rootDate = rootBatch ? rootBatch.hatchDate : null;
+
+  function getBatchDate(batchId) {
+    const incomingEdges = graph.edges.filter(e => e.to === batchId);
+    if (incomingEdges.length > 0) {
+      return incomingEdges.map(e => e.date).sort()[0];
     }
-    let maxParentLevel = 0;
-    for (const edge of parentEdges) {
-      maxParentLevel = Math.max(maxParentLevel, computeLevel(edge.from, visited));
-    }
-    const lvl = maxParentLevel + 1;
-    levels.set(nodeId, lvl);
-    return lvl;
+    const b = (db.batches || []).find(x => x.id === batchId);
+    return b ? b.hatchDate : "9999-99-99";
   }
 
-  graph.nodes.forEach((n) => computeLevel(n.id));
+  const sortedNodes = [...graph.nodes].sort((a, b) => {
+    const da = getBatchDate(a.id);
+    const db_ = getBatchDate(b.id);
+    return da.localeCompare(db_);
+  });
+
+  const levelMap = new Map();
+  let currentLevel = 0;
+  let currentDate = null;
+  for (const n of sortedNodes) {
+    const d = getBatchDate(n.id);
+    if (currentDate !== null && d !== currentDate) {
+      currentLevel++;
+    }
+    currentDate = d;
+    levelMap.set(n.id, currentLevel);
+  }
+
+  graph.nodes.forEach((n) => levels.set(n.id, levelMap.get(n.id) || 0));
 
   const levelGroups = new Map();
   for (const [nodeId, lvl] of levels) {
