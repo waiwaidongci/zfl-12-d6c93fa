@@ -1600,6 +1600,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
     pondContainer.innerHTML = forms[tab];
@@ -1612,6 +1613,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
     customerContainer.innerHTML = forms[tab];
@@ -1636,6 +1638,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
     costContainer.innerHTML = forms[tab];
@@ -1648,6 +1651,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
     const warningContainer = document.getElementById("warningContainer");
     warningContainer.classList.remove("hidden");
     warningContainer.innerHTML = forms[tab];
