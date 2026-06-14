@@ -6,6 +6,7 @@ const POND_STATUS = {
 };
 
 const POND_PURPOSES = ["虾苗培育", "蟹苗培育", "贝苗培育", "鱼种培育", "暂养池", "其他"];
+const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
 
 const forms = {
   record:
@@ -14,6 +15,8 @@ const forms = {
     '<h2>分池合池</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>来源池</label><select name="fromPool"></select><label>目标池</label><select name="toPool"></select><label>数量</label><input name="count" type="number" required><label>原因</label><textarea name="reason"></textarea><button>保存流转</button>',
   sale:
     '<h2>出苗销售</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>客户</label><div class="sale-customer-row"><select name="customerId" id="saleCustomerSelect"><option value="">请选择客户（选填）</option></select><button type="button" class="secondary" id="quickAddCustomerBtn">+ 新客户</button></div><div id="saleCustomerNameWrap"><label>或直接输入客户名称</label><input name="customer" id="saleCustomerName" placeholder="手动输入客户名称"></div><label>数量</label><input name="count" type="number" required><label>单价</label><input name="unitPrice" type="number" step="0.0001" required><button>记录销售</button>',
+  cost:
+    '<h2>成本项目录入</h2><div class="cost-toolbar"><select id="costBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addCostBtn">+ 新增成本</button></div><div class="cost-stats" id="costStats"></div><div class="grid" id="costList"></div>',
   batch:
     '<h2>新建孵化批次</h2><label>批次号</label><input name="id" required><label>品种</label><input name="species" required><label>亲本池</label><select name="parentPoolId"></select><label>孵化日期</label><input name="hatchDate" type="date" required><label>当前池</label><select name="currentPool"></select><label>估算数量</label><input name="estimatedCount" type="number" required><label>初始成本</label><input name="cost" type="number" required><button>创建批次</button>',
   pond:
@@ -91,16 +94,30 @@ async function renderTrace() {
     trace.batch.status +
     " · 当前池 " +
     trace.batch.currentPool;
-  statsEl.innerHTML = [
-    ["均温", trace.summary.averageTemperature + "℃"],
-    ["均溶氧", trace.summary.averageOxygen],
-    ["总投喂", trace.summary.totalFeed + "kg"],
-    ["估算成本", trace.summary.estimatedCost + "元"],
-  ]
-    .map(
-      ([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`
-    )
-    .join("");
+
+  const s = trace.summary;
+  const profitClass = s.grossProfit >= 0 ? "" : "warning";
+
+  const costBreakdown = COST_CATEGORIES.map(
+    (cat) => `<div class="row"><span class="label">${cat}</span><span>${(s.costByCategory?.[cat] || 0).toFixed(2)} 元</span></div>`
+  ).join("");
+
+  statsEl.innerHTML = `
+    <div class="stat"><span>均温</span><strong>${s.averageTemperature}℃</strong></div>
+    <div class="stat"><span>均溶氧</span><strong>${s.averageOxygen}</strong></div>
+    <div class="stat"><span>总投喂</span><strong>${s.totalFeed}kg</strong></div>
+    <div class="stat"><span>初始成本</span><strong>${s.initialCost.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>成本项目合计</span><strong>${s.costItemsTotal.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>总成本</span><strong>${s.totalCost.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>估算数量</span><strong>${s.estimatedCount.toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>单位苗成本</span><strong>${s.unitCost.toFixed(6)} 元/尾</strong></div>
+    <div class="stat"><span>已售出</span><strong>${s.soldCount.toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>销售收入</span><strong>${s.salesRevenue.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>售出成本</span><strong>${s.soldCost.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>销售毛利</span><strong class="${profitClass}">${s.grossProfit.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>毛利率</span><strong class="${profitClass}">${s.grossMargin.toFixed(2)}%</strong></div>
+  `;
+
   const events = [
     ...trace.transfers.map((e) => ({
       date: e.date,
@@ -124,6 +141,11 @@ async function renderTrace() {
         "%" +
         (Number(e.oxygen) < 4.5 ? "，溶氧偏低" : ""),
     })),
+    ...(trace.costItems || []).map((e) => ({
+      date: e.date,
+      title: "成本支出",
+      detail: `[${e.category}] ${e.description || ""}，金额 ${e.amount.toFixed(2)} 元${e.quantity ? `，数量 ${e.quantity}${e.unit || ""}` : ""}`,
+    })),
     ...trace.sales.map((e) => {
       let customerText = e.customer;
       if (e.customerInfo) {
@@ -132,13 +154,15 @@ async function renderTrace() {
           customerText += "（" + e.customerInfo.phone + "）";
         }
       }
+      const revenue = Number(e.count || 0) * Number(e.unitPrice || 0);
       return {
         date: e.date,
         title: "出苗销售",
-        detail: customerText + "，" + e.count + "尾，收入" + Math.round(e.count * e.unitPrice) + "元",
+        detail: customerText + "，" + e.count + "尾，收入" + revenue.toFixed(2) + "元，单价" + Number(e.unitPrice).toFixed(4) + "元/尾",
       };
     }),
   ].sort((a, b) => b.date.localeCompare(a.date));
+
   timelineEl.innerHTML = events
     .map(
       (e) =>
@@ -567,6 +591,192 @@ function bindCustomerEvents() {
   if (search) search.oninput = renderCustomerList;
 }
 
+function renderCostStats() {
+  const costItems = db.costItems || [];
+  const batchFilter = document.getElementById("costBatchFilter")?.value || "";
+  let filtered = costItems;
+  if (batchFilter) {
+    filtered = costItems.filter((c) => c.batchId === batchFilter);
+  }
+
+  const byCategory = {};
+  COST_CATEGORIES.forEach((cat) => {
+    byCategory[cat] = filtered
+      .filter((c) => c.category === cat)
+      .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  });
+  const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
+
+  const stats = [
+    ["成本项目数", filtered.length + " 项"],
+    ["总成本", total.toFixed(2) + " 元"],
+  ];
+  COST_CATEGORIES.forEach((cat) => {
+    stats.push([cat, byCategory[cat].toFixed(2) + " 元"]);
+  });
+
+  document.getElementById("costStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
+    .join("");
+}
+
+function renderCostList() {
+  const costItems = db.costItems || [];
+  const batchFilter = document.getElementById("costBatchFilter")?.value || "";
+  let filtered = costItems;
+  if (batchFilter) {
+    filtered = costItems.filter((c) => c.batchId === batchFilter);
+  }
+  filtered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+
+  const list = document.getElementById("costList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无成本数据，点击右上角「新增成本」添加</div>`;
+    return;
+  }
+
+  const categoryColors = {
+    "饲料": "status-active",
+    "药品": "status-cleaning",
+    "人工": "status-idle",
+    "能源": "status-maintenance",
+    "其他": "",
+  };
+
+  list.innerHTML = filtered
+    .map((c) => `
+    <div class="cost-card" data-id="${c.id}">
+      <div class="cost-header">
+        <span class="status-badge ${categoryColors[c.category] || ""}">${c.category}</span>
+        <span class="cost-amount">¥${Number(c.amount).toFixed(2)}</span>
+      </div>
+      <div class="cost-id">${c.id} · ${c.batchId}</div>
+      <div class="cost-info">
+        ${c.date ? `<div class="row"><span class="label">日期</span><span>${c.date}</span></div>` : ""}
+        ${c.quantity !== undefined && c.quantity !== null ? `<div class="row"><span class="label">数量</span><span>${c.quantity}${c.unit || ""}</span></div>` : ""}
+      </div>
+      ${
+        c.description
+          ? `<div class="meta" style="margin-top:8px;font-size:12px;">${c.description}</div>`
+          : ""
+      }
+      <div class="cost-actions">
+        <button type="button" class="secondary" data-action="edit">编辑</button>
+        <button type="button" class="danger" data-action="delete">删除</button>
+      </div>
+    </div>
+  `)
+    .join("");
+
+  list.querySelectorAll(".cost-card").forEach((card) => {
+    const id = card.dataset.id;
+    const editBtn = card.querySelector('[data-action="edit"]');
+    const deleteBtn = card.querySelector('[data-action="delete"]');
+    editBtn.onclick = (e) => { e.preventDefault(); openCostModal(id); };
+    deleteBtn.onclick = (e) => { e.preventDefault(); deleteCost(id); };
+  });
+}
+
+function renderCosts() {
+  const batchFilter = document.getElementById("costBatchFilter");
+  if (batchFilter && db.batches) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    batchFilter.value = currentVal;
+  }
+  renderCostStats();
+  renderCostList();
+}
+
+function openCostModal(costId = null, prefillBatchId = null) {
+  const costItems = db.costItems || [];
+  const cost = costId ? costItems.find((c) => c.id === costId) : null;
+  const isEdit = !!cost;
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${isEdit ? "编辑成本项目" : "新增成本项目"}</h2>
+      <form id="costForm">
+        <label>批次</label>
+        <select name="batchId" required>
+          ${db.batches
+            .map(
+              (b) =>
+                `<option value="${b.id}" ${
+                  (cost?.batchId || prefillBatchId) === b.id ? "selected" : ""
+                }>${b.id} · ${b.species}</option>`
+            )
+            .join("")}
+        </select>
+        <label>费用类别</label>
+        <select name="category" required>
+          ${COST_CATEGORIES.map(
+            (c) => `<option value="${c}" ${cost?.category === c ? "selected" : ""}>${c}</option>`
+          ).join("")}
+        </select>
+        <label>日期</label>
+        <input name="date" type="date" required value="${cost?.date || ""}">
+        <label>金额（元）</label>
+        <input name="amount" type="number" step="0.01" min="0" required value="${cost?.amount || ""}">
+        <label>数量（选填）</label>
+        <input name="quantity" type="number" step="0.01" min="0" value="${cost?.quantity ?? ""}" placeholder="如 350">
+        <label>单位（选填）</label>
+        <input name="unit" value="${cost?.unit || ""}" placeholder="如 kg、L、工日">
+        <label>说明（选填）</label>
+        <textarea name="description" placeholder="费用详细说明">${cost?.description || ""}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">${isEdit ? "保存修改" : "新增成本"}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+  modal.querySelector("#costForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      if (isEdit) {
+        await api("/api/costs/" + costId, { method: "PUT", body: JSON.stringify(data) });
+      } else {
+        await api("/api/costs", { method: "POST", body: JSON.stringify(data) });
+      }
+      modal.remove();
+      await load();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+async function deleteCost(costId) {
+  const costItems = db.costItems || [];
+  const cost = costItems.find((c) => c.id === costId);
+  if (!cost) return;
+  if (!confirm("确定要删除该成本项目吗？")) return;
+  try {
+    await api("/api/costs/" + costId, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function bindCostEvents() {
+  const addBtn = document.getElementById("addCostBtn");
+  const batchFilter = document.getElementById("costBatchFilter");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openCostModal(null, batchSelect.value); };
+  if (batchFilter) batchFilter.onchange = () => { renderCostStats(); renderCostList(); };
+}
+
 function bindSaleEvents() {
   const customerSelect = document.getElementById("saleCustomerSelect");
   const quickAddBtn = document.getElementById("quickAddCustomerBtn");
@@ -602,6 +812,7 @@ function setTab(tab) {
     form.innerHTML = "";
     form.classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
     pondContainer.innerHTML = forms[tab];
@@ -612,17 +823,30 @@ function setTab(tab) {
     form.innerHTML = "";
     form.classList.add("hidden");
     document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
     customerContainer.innerHTML = forms[tab];
     fillSelects();
     renderCustomers();
     bindCustomerEvents();
+  } else if (tab === "cost") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    const costContainer = document.getElementById("costContainer");
+    costContainer.classList.remove("hidden");
+    costContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderCosts();
+    bindCostEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
       bindSaleEvents();
@@ -634,6 +858,7 @@ function setTab(tab) {
 async function load() {
   db = await api("/api/state");
   if (!db.customers) db.customers = [];
+  if (!db.costItems) db.costItems = [];
   try {
     const enrichedCustomers = await api("/api/customers");
     db.customers = enrichedCustomers;
@@ -646,6 +871,9 @@ async function load() {
   } else if (activeTab === "customer") {
     renderCustomers();
     bindCustomerEvents();
+  } else if (activeTab === "cost") {
+    renderCosts();
+    bindCostEvents();
   } else {
     renderTrace();
     if (activeTab === "sale") {
@@ -659,7 +887,7 @@ batchSelect.onchange = renderTrace;
 document.querySelector("#reload").onclick = load;
 form.onsubmit = async (event) => {
   event.preventDefault();
-  if (activeTab === "pond" || activeTab === "customer") return;
+  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost") return;
   const data = Object.fromEntries(new FormData(form).entries());
   const path =
     activeTab === "record"

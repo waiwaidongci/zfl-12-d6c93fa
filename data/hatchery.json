@@ -119,6 +119,58 @@
       "unitPrice": 0.09
     }
   ],
+  "costItems": [
+    {
+      "id": "COST-1",
+      "batchId": "B-260601",
+      "category": "饲料",
+      "date": "2026-06-05",
+      "amount": 2800,
+      "quantity": 350,
+      "unit": "kg",
+      "description": "丰年虫幼体饲料"
+    },
+    {
+      "id": "COST-2",
+      "batchId": "B-260601",
+      "category": "药品",
+      "date": "2026-06-08",
+      "amount": 1200,
+      "quantity": 5,
+      "unit": "L",
+      "description": "水质改良剂"
+    },
+    {
+      "id": "COST-3",
+      "batchId": "B-260601",
+      "category": "人工",
+      "date": "2026-06-10",
+      "amount": 3500,
+      "quantity": 7,
+      "unit": "工日",
+      "description": "育苗工人工资"
+    },
+    {
+      "id": "COST-4",
+      "batchId": "B-260601",
+      "category": "能源",
+      "date": "2026-06-12",
+      "amount": 1800,
+      "quantity": 600,
+      "unit": "kWh",
+      "description": "增氧和加温电费"
+    },
+    {
+      "id": "COST-5",
+      "batchId": "B-260601",
+      "category": "其他",
+      "date": "2026-06-13",
+      "amount": 500,
+      "quantity": 1,
+      "unit": "批",
+      "description": "消毒用品及耗材"
+    }
+  ],
   "customers": [
     {
       "id": "C-001",

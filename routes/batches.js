@@ -9,6 +9,18 @@ function avg(items, key) {
   return Number((sum(items, key) / items.length).toFixed(2));
 }
 
+function calcCostSummary(costItems) {
+  const categories = ["饲料", "药品", "人工", "能源", "其他"];
+  const byCategory = {};
+  categories.forEach((cat) => {
+    byCategory[cat] = costItems
+      .filter((c) => c.category === cat)
+      .reduce((total, c) => total + Number(c.amount || 0), 0);
+  });
+  const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
+  return { byCategory, total };
+}
+
 export function batchTrace(db, batchId) {
   const batch = db.batches.find((item) => item.id === batchId);
   if (!batch) return null;
@@ -22,19 +34,44 @@ export function batchTrace(db, batchId) {
     .filter((item) => item.batchId === batchId)
     .map((s) => enrichSale(s, db))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const feedCost = records.reduce((sum, item) => sum + Number(item.feed || 0) * 7.8, 0);
+  const costItems = (db.costItems || [])
+    .filter((item) => item.batchId === batchId)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const initialCost = Number(batch.cost || 0);
+  const costSummary = calcCostSummary(costItems);
+  const totalCost = initialCost + costSummary.total;
+  const estimatedCount = Number(batch.estimatedCount || 0);
+  const unitCost = estimatedCount > 0 ? Number((totalCost / estimatedCount).toFixed(6)) : 0;
+
+  const soldCount = sum(sales, "count");
+  const salesRevenue = sales.reduce((total, s) => total + Number(s.count || 0) * Number(s.unitPrice || 0), 0);
+  const soldCost = soldCount * unitCost;
+  const grossProfit = salesRevenue - soldCost;
+  const grossMargin = salesRevenue > 0 ? Number(((grossProfit / salesRevenue) * 100).toFixed(2)) : 0;
+
   return {
     batch,
     records,
     transfers,
     sales,
+    costItems,
     summary: {
       averageTemperature: avg(records, "temperature"),
       averageOxygen: avg(records, "oxygen"),
       totalFeed: sum(records, "feed"),
       averageMortality: avg(records, "mortality"),
-      estimatedCost: Math.round((batch.cost || 0) + feedCost),
-      soldCount: sum(sales, "count"),
+      initialCost,
+      costByCategory: costSummary.byCategory,
+      costItemsTotal: costSummary.total,
+      totalCost,
+      estimatedCount,
+      unitCost,
+      soldCount,
+      salesRevenue: Number(salesRevenue.toFixed(2)),
+      soldCost: Number(soldCost.toFixed(2)),
+      grossProfit: Number(grossProfit.toFixed(2)),
+      grossMargin,
     },
   };
 }

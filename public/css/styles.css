@@ -460,6 +460,96 @@ button + button {
   font-size: 13px;
 }
 
+.cost-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cost-toolbar select {
+  width: auto;
+  min-width: 220px;
+}
+
+.cost-toolbar .spacer {
+  flex: 1;
+}
+
+.cost-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.cost-stats .stat strong {
+  font-size: 18px;
+}
+
+.cost-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.cost-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.cost-card .cost-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cost-card .cost-amount {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.cost-card .cost-id {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.cost-card .cost-info {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.cost-card .cost-info .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cost-card .cost-info .label {
+  color: var(--muted);
+}
+
+.cost-card .cost-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.cost-card .cost-actions button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 @media (max-width: 900px) {
   header {
     display: block;
@@ -476,6 +566,9 @@ button + button {
     grid-template-columns: 1fr 1fr;
   }
   .customer-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cost-stats {
     grid-template-columns: 1fr 1fr;
   }
 }

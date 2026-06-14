@@ -10,6 +10,7 @@ import { createRecordsRouter } from "./routes/records.js";
 import { createTransfersRouter } from "./routes/transfers.js";
 import { createSalesRouter } from "./routes/sales.js";
 import { createCustomersRouter } from "./routes/customers.js";
+import { createCostsRouter } from "./routes/costs.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -76,6 +77,7 @@ const recordsRouter = createRecordsRouter(helpers);
 const transfersRouter = createTransfersRouter(helpers);
 const salesRouter = createSalesRouter(helpers);
 const customersRouter = createCustomersRouter(helpers);
+const costsRouter = createCostsRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -102,6 +104,9 @@ async function routeApi(req, res, url, method) {
 
   const result6 = await customersRouter(req, res, pathname, method);
   if (result6 !== false) return result6;
+
+  const result7 = await costsRouter(req, res, pathname, method);
+  if (result7 !== false) return result7;
 
   return false;
 }
