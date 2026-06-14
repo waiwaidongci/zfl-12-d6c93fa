@@ -1,4 +1,4 @@
-import { canRollback, executeRollback, getLatestRollbackable } from "../utils/audit-log.js";
+import { canRollbackLatest, executeRollback, getLatestRollbackable } from "../utils/audit-log.js";
 
 const ACTION_LABELS = {
   batch_create: "新建批次",
@@ -80,14 +80,13 @@ export function createAuditLogRouter(helpers) {
       const total = logs.length;
       const totalPages = Math.ceil(total / pageSize);
       const start = (page - 1) * pageSize;
+      const latest = getLatestRollbackable(db, farmId);
       const items = logs.slice(start, start + pageSize).map((l) => ({
         ...l,
         actionLabel: ACTION_LABELS[l.action] || l.action,
         targetLabel: TARGET_LABELS[l.targetType] || l.targetType,
-        rollbackable: canRollback(l).ok,
+        rollbackable: latest ? l.id === latest.id : false,
       }));
-
-      const latest = getLatestRollbackable(db, farmId);
 
       return sendJson(res, 200, {
         items,
@@ -125,12 +124,13 @@ export function createAuditLogRouter(helpers) {
       const logId = logMatch[1];
       const log = (db.opLogs || []).find((l) => l.id === logId);
       if (!log) return sendJson(res, 404, { error: "日志不存在" });
+      const rollbackCheck = canRollbackLatest(db, log);
       return sendJson(res, 200, {
         ...log,
         actionLabel: ACTION_LABELS[log.action] || log.action,
         targetLabel: TARGET_LABELS[log.targetType] || log.targetType,
-        rollbackable: canRollback(log).ok,
-        rollbackReason: canRollback(log).ok ? "" : canRollback(log).reason,
+        rollbackable: rollbackCheck.ok,
+        rollbackReason: rollbackCheck.ok ? "" : rollbackCheck.reason,
       });
     }
 

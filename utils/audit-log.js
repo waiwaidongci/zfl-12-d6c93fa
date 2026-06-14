@@ -44,8 +44,18 @@ export function canRollback(logEntry) {
   return { ok: true, reason: "" };
 }
 
-export function executeRollback(db, logEntry) {
+export function canRollbackLatest(db, logEntry, farmId) {
   const check = canRollback(logEntry);
+  if (!check.ok) return check;
+  const latest = getLatestRollbackable(db, farmId ?? logEntry.farmId);
+  if (!latest || latest.id !== logEntry.id) {
+    return { ok: false, reason: "只能撤销最近一次可回滚操作" };
+  }
+  return { ok: true, reason: "" };
+}
+
+export function executeRollback(db, logEntry, farmId) {
+  const check = canRollbackLatest(db, logEntry, farmId);
   if (!check.ok) return { success: false, error: check.reason };
 
   const { action, targetType, before, after, meta } = logEntry;
@@ -101,6 +111,17 @@ function rollbackCreate(db, targetType, after, logEntry) {
 
   if (targetType === "batch" && Array.isArray(db.transfers)) {
     db.transfers = db.transfers.filter((t) => !(t.batchId === createdItem.id && t.reason === "新批次入池"));
+  }
+
+  if (targetType === "record" && Array.isArray(db.warnings)) {
+    db.warnings = db.warnings.filter((w) => w.recordId !== createdItem.id);
+  }
+
+  if (targetType === "transfer" && logEntry.meta && logEntry.meta.batchId) {
+    const batch = (db.batches || []).find((b) => b.id === logEntry.meta.batchId);
+    if (batch && logEntry.meta.previousPool !== undefined) {
+      batch.currentPool = logEntry.meta.previousPool;
+    }
   }
 
   if (targetType === "inventory" && logEntry.meta && logEntry.meta.batchId) {
