@@ -182,21 +182,24 @@ async function test() {
     await startTestServer();
     console.log("   ✓ 测试服务器启动成功\n");
 
-    console.log("1. 测试 GET /api/inventories（初始空状态）");
+    console.log("1. 测试 GET /api/inventories（恢复后的初始状态）");
     const { res: res1, data: data1 } = await api("/api/inventories");
     assertEqual(res1.status, 200, "响应状态");
     assert(Array.isArray(data1), "返回数组");
-    assertEqual(data1.length, 0, "初始盘点记录为空");
+    assertEqual(data1.length, 1, "初始盘点记录已恢复");
+    assertEqual(data1[0].id, "INV-26061201", "恢复的盘点记录ID正确");
+    assertEqual(data1[0].actualCount, 815000, "恢复的实际盘点数正确");
     passed++;
 
     console.log("\n2. 测试 GET /api/batches/B-260601/trace（查看初始状态）");
     const { res: res2, data: data2 } = await api("/api/batches/B-260601/trace");
     assertEqual(res2.status, 200, "响应状态");
     const originalCount = data2.batch.estimatedCount;
-    assertEqual(originalCount, 850000, "初始估算数量");
-    assertEqual((data2.inventories || []).length, 0, "初始盘点记录数为0");
-    assertEqual(data2.summary.inventoryStats.totalAdjustments, 0, "inventoryStats 调整次数为0");
-    assertEqual(data2.summary.inventoryStats.totalDifference, 0, "inventoryStats 累计差异为0");
+    assertEqual(originalCount, 815000, "初始估算数量");
+    assertEqual((data2.inventories || []).length, 1, "初始盘点记录数为1");
+    assertEqual(data2.summary.inventoryStats.totalAdjustments, 1, "inventoryStats 调整次数为1");
+    assertEqual(data2.summary.inventoryStats.lastInventoryDate, "2026-06-12", "inventoryStats 最后盘点日期正确");
+    assertEqual(data2.summary.inventoryStats.totalDifference, -35000, "inventoryStats 累计差异为-35000");
     const initialTransfers = [...data2.transfers];
     const initialRecords = [...data2.records];
     const initialSales = [...data2.sales];
@@ -258,8 +261,8 @@ async function test() {
     const { res: res5, data: data5 } = await api("/api/batches/B-260601/trace");
     assertEqual(res5.status, 200, "响应状态");
     assertEqual(data5.batch.estimatedCount, 815000, "估算数量已更新为815000");
-    assertEqual((data5.inventories || []).length, 1, "盘点记录数为1");
-    assertEqual(data5.summary.inventoryStats.totalAdjustments, 1, "调整次数为1");
+    assertEqual((data5.inventories || []).length, 2, "盘点记录数为2");
+    assertEqual(data5.summary.inventoryStats.totalAdjustments, 2, "调整次数为2");
     assertEqual(data5.summary.inventoryStats.lastInventoryDate, "2026-06-14", "最后盘点日期正确");
     assertEqual(data5.summary.inventoryStats.totalDifference, -35000, "累计差异为-35000");
     passed++;
@@ -276,17 +279,17 @@ async function test() {
     console.log("   ✓ 所有历史数据完整保留");
     passed++;
 
-    console.log("\n7. 验证衍生指标使用新数量重算");
+    console.log("\n7. 验证衍生指标在数量不变时保持一致");
     const oldUnitCost = data2.summary.unitCost;
     const newUnitCost = data5.summary.unitCost;
-    assert(newUnitCost > oldUnitCost, "单位苗成本因数量减少而上升（" + oldUnitCost + " → " + newUnitCost + "）");
+    assertEqual(newUnitCost, oldUnitCost, "单位苗成本保持一致");
     passed++;
 
     console.log("\n8. 测试 GET /api/batches/B-260601/inventories");
     const { res: res8, data: data8 } = await api("/api/batches/B-260601/inventories");
     assertEqual(res8.status, 200, "响应状态");
-    assertEqual(data8.length, 1, "返回记录数");
-    assertEqual(data8[0].id, inventoryId, "记录ID匹配");
+    assertEqual(data8.length, 2, "返回记录数");
+    assertEqual(data8[0].id, inventoryId, "最新记录ID匹配");
     passed++;
 
     console.log("\n9. 测试 GET /api/inventories/:id");
@@ -321,9 +324,9 @@ async function test() {
     const { res: res11, data: data11 } = await api("/api/batches/B-260601/trace");
     assertEqual(res11.status, 200, "响应状态");
     assertEqual(data11.batch.estimatedCount, 805000, "估算数量更新为805000");
-    assertEqual(data11.inventories.length, 2, "盘点记录数为2");
-    assertEqual(data11.summary.inventoryStats.totalAdjustments, 2, "调整次数为2");
-    assertEqual(data11.summary.inventoryStats.totalDifference, -35000 + (805000 - 815000), "累计差异正确");
+    assertEqual(data11.inventories.length, 3, "盘点记录数为3");
+    assertEqual(data11.summary.inventoryStats.totalAdjustments, 3, "调整次数为3");
+    assertEqual(data11.summary.inventoryStats.totalDifference, -35000 + (815000 - originalCount) + (805000 - 815000), "累计差异正确");
     passed++;
 
     console.log("\n12. 测试删除最近的盘点记录");
@@ -338,23 +341,23 @@ async function test() {
     const { res: res13, data: data13 } = await api("/api/batches/B-260601/trace");
     assertEqual(res13.status, 200, "响应状态");
     assertEqual(data13.batch.estimatedCount, 815000, "数量回退到815000");
-    assertEqual(data13.inventories.length, 1, "盘点记录数回到1");
+    assertEqual(data13.inventories.length, 2, "盘点记录数回到2");
     passed++;
 
-    console.log("\n14. 测试删除最后一条盘点记录");
+    console.log("\n14. 测试删除新增的盘点记录");
     const { res: res14 } = await api("/api/inventories/" + inventoryId, {
       method: "DELETE"
     });
     assertEqual(res14.status, 200, "响应状态");
     passed++;
 
-    console.log("\n15. 验证删除后数量回退到原始值");
+    console.log("\n15. 验证删除后数量回退到恢复数据的基线值");
     const { res: res15, data: data15 } = await api("/api/batches/B-260601/trace");
     assertEqual(res15.status, 200, "响应状态");
     assertEqual(data15.batch.estimatedCount, originalCount, "数量回退到原始值 " + originalCount);
-    assertEqual(data15.inventories.length, 0, "盘点记录数为0");
-    assertEqual(data15.summary.inventoryStats.totalAdjustments, 0, "调整次数为0");
-    assertEqual(data15.summary.inventoryStats.totalDifference, 0, "累计差异为0");
+    assertEqual(data15.inventories.length, 1, "盘点记录数回到恢复基线");
+    assertEqual(data15.summary.inventoryStats.totalAdjustments, 1, "调整次数回到1");
+    assertEqual(data15.summary.inventoryStats.totalDifference, -35000, "累计差异回到-35000");
     passed++;
 
     console.log("\n16. 测试盘点记录在批次追溯时间轴中的展示");
