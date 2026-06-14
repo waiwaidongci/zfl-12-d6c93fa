@@ -1,6 +1,19 @@
 export const seedData = {
+  farms: [
+    {
+      id: "FARM-DEFAULT",
+      name: "默认场区",
+      location: "",
+      address: "",
+      contact: "",
+      phone: "",
+      note: "系统默认场区，包含初始示例数据",
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+    },
+  ],
   parentPools: [
-    { id: "PP-01", species: "南美白对虾", count: 320, note: "春季亲本" },
+    { id: "PP-01", species: "南美白对虾", count: 320, note: "春季亲本", farmId: "FARM-DEFAULT" },
   ],
   batches: [
     {
@@ -12,6 +25,7 @@ export const seedData = {
       estimatedCount: 815000,
       status: "育苗中",
       cost: 12600,
+      farmId: "FARM-DEFAULT",
     },
   ],
   ponds: [
@@ -23,6 +37,7 @@ export const seedData = {
       status: "idle",
       disinfectionDate: "2026-05-28",
       note: "标准虾苗培育池，配备独立增氧系统",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "P-02",
@@ -32,6 +47,7 @@ export const seedData = {
       status: "idle",
       disinfectionDate: "2026-05-30",
       note: "",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "P-03",
@@ -41,6 +57,7 @@ export const seedData = {
       status: "active",
       disinfectionDate: "2026-05-25",
       note: "当前养殖南美白对虾 B-260601 批次",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "P-04",
@@ -50,6 +67,7 @@ export const seedData = {
       status: "cleaning",
       disinfectionDate: "2026-06-12",
       note: "消毒作业中，预计 6 月 14 日完成",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "P-05",
@@ -59,6 +77,7 @@ export const seedData = {
       status: "idle",
       disinfectionDate: "2026-05-20",
       note: "计划用于三疣梭子蟹夏季苗种",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "P-06",
@@ -68,6 +87,7 @@ export const seedData = {
       status: "maintenance",
       disinfectionDate: "2026-05-15",
       note: "排水阀维修中，预计 6 月 16 日恢复",
+      farmId: "FARM-DEFAULT",
     },
   ],
   records: [
@@ -82,6 +102,7 @@ export const seedData = {
       feed: 18,
       mortality: 0.8,
       abnormal: "无",
+      farmId: "FARM-DEFAULT",
     },
   ],
   transfers: [
@@ -93,6 +114,7 @@ export const seedData = {
       date: "2026-06-03",
       count: 900000,
       reason: "初次入池",
+      farmId: "FARM-DEFAULT",
     },
   ],
   sales: [],
@@ -106,6 +128,7 @@ export const seedData = {
       quantity: 350,
       unit: "kg",
       description: "丰年虫幼体饲料",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "COST-2",
@@ -116,6 +139,7 @@ export const seedData = {
       quantity: 5,
       unit: "L",
       description: "水质改良剂",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "COST-3",
@@ -126,6 +150,7 @@ export const seedData = {
       quantity: 7,
       unit: "工日",
       description: "育苗工人工资",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "COST-4",
@@ -136,6 +161,7 @@ export const seedData = {
       quantity: 600,
       unit: "kWh",
       description: "增氧和加温电费",
+      farmId: "FARM-DEFAULT",
     },
     {
       id: "COST-5",
@@ -146,6 +172,7 @@ export const seedData = {
       quantity: 1,
       unit: "批",
       description: "消毒用品及耗材",
+      farmId: "FARM-DEFAULT",
     },
   ],
   customers: [
@@ -200,6 +227,7 @@ export const seedData = {
       difference: -35000,
       operator: "李场长",
       note: "因前期死亡率偏高，实际数量低于系统估算",
+      farmId: "FARM-DEFAULT",
     },
   ],
 };

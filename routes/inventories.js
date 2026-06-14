@@ -1,3 +1,18 @@
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
+
 export function createInventoriesRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -17,9 +32,14 @@ export function createInventoriesRouter(helpers) {
 
     if (method === "GET" && pathname === "/api/inventories") {
       const db = await loadDb();
-      const inventories = (db.inventories || [])
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let inventories = (db.inventories || [])
         .slice()
         .sort((a, b) => b.date.localeCompare(a.date));
+      if (farmId) {
+        inventories = inventories.filter((i) => i.farmId === farmId);
+      }
       return sendJson(res, 200, inventories);
     }
 
@@ -48,6 +68,7 @@ export function createInventoriesRouter(helpers) {
       const method = input.method === "full" ? "full" : "sampling";
       const systemEstimate = Number(batch.estimatedCount || 0);
       const difference = actualCount - systemEstimate;
+      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
 
       const inventory = {
         id: `INV-${Date.now()}`,
@@ -63,6 +84,7 @@ export function createInventoriesRouter(helpers) {
         difference: difference,
         operator: input.operator || "",
         note: input.note || "",
+        farmId: farmId,
       };
 
       if (!db.inventories) db.inventories = [];

@@ -9,6 +9,21 @@ import {
   RECORD_SCHEMA,
 } from "../utils/csv.js";
 import { generateWarningsFromRecord } from "./warnings.js";
+import { DEFAULT_FARM_ID, getDefaultFarm } from "./farms.js";
+
+function getFarmIdFromQuery(url) {
+  if (!url) return null;
+  const queryIndex = url.indexOf("?");
+  if (queryIndex === -1) return null;
+  const params = new URLSearchParams(url.slice(queryIndex + 1));
+  return params.get("farmId") || null;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches?.find((b) => b.id === batchId);
+  if (batch?.farmId) return batch.farmId;
+  return getDefaultFarm(db.farms || [])?.id || DEFAULT_FARM_ID;
+}
 
 export function createDataIoRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
@@ -24,32 +39,44 @@ export function createDataIoRouter(helpers) {
   return async function dataIoRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/export/batches") {
       const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.batches || [];
+      if (farmId) data = data.filter((b) => b.farmId === farmId);
       const headers = buildBatchExportHeaders();
-      const csv = generateCsv(headers, db.batches);
+      const csv = generateCsv(headers, data);
       sendCsvResponse(res, "batches.csv", csv);
       return true;
     }
 
     if (method === "GET" && pathname === "/api/export/records") {
       const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.records || [];
+      if (farmId) data = data.filter((r) => r.farmId === farmId);
       const headers = buildRecordExportHeaders();
-      const csv = generateCsv(headers, db.records);
+      const csv = generateCsv(headers, data);
       sendCsvResponse(res, "records.csv", csv);
       return true;
     }
 
     if (method === "GET" && pathname === "/api/export/transfers") {
       const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.transfers || [];
+      if (farmId) data = data.filter((t) => t.farmId === farmId);
       const headers = buildTransferExportHeaders();
-      const csv = generateCsv(headers, db.transfers);
+      const csv = generateCsv(headers, data);
       sendCsvResponse(res, "transfers.csv", csv);
       return true;
     }
 
     if (method === "GET" && pathname === "/api/export/sales") {
       const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.sales || [];
+      if (farmId) data = data.filter((s) => s.farmId === farmId);
       const headers = buildSalesExportHeaders();
-      const csv = generateCsv(headers, db.sales);
+      const csv = generateCsv(headers, data);
       sendCsvResponse(res, "sales.csv", csv);
       return true;
     }
@@ -119,8 +146,10 @@ export function createDataIoRouter(helpers) {
           continue;
         }
 
+        const farmId = getFarmIdForBatch(db, rec.batchId);
         const record = {
           id: `REC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          farmId,
           batchId: rec.batchId,
           date: rec.date,
           poolId: rec.poolId || "",

@@ -1,3 +1,18 @@
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
+
 function validateShipment(input, isUpdate = false) {
   const errors = [];
 
@@ -29,6 +44,7 @@ function sanitizeShipment(input, existing = null) {
     quantity: 0,
     note: "",
     createdAt: "",
+    farmId: "",
   };
 
   return {
@@ -39,6 +55,7 @@ function sanitizeShipment(input, existing = null) {
     quantity: input.quantity !== undefined ? Number(input.quantity) : base.quantity,
     note: input.note !== undefined ? (input.note || "").trim() : base.note,
     createdAt: base.createdAt || new Date().toISOString(),
+    farmId: input.farmId !== undefined ? input.farmId.trim() : base.farmId,
   };
 }
 
@@ -113,8 +130,14 @@ export function createShipmentsRouter(helpers) {
   return async function shipmentsRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/shipments") {
       const db = await loadDb();
-      const shipments = (db.shipments || []).map((s) => enrichShipment(s, db));
-      return sendJson(res, 200, shipments);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let shipments = db.shipments || [];
+      if (farmId) {
+        shipments = shipments.filter((s) => s.farmId === farmId);
+      }
+      const enriched = shipments.map((s) => enrichShipment(s, db));
+      return sendJson(res, 200, enriched);
     }
 
     if (method === "POST" && pathname === "/api/shipments") {
@@ -164,10 +187,13 @@ export function createShipmentsRouter(helpers) {
         });
       }
 
+      const farmId = input.farmId || getFarmIdForBatch(db, order.batchId);
+
       const shipment = sanitizeShipment({
         ...input,
         id: `SHP-${Date.now()}`,
         batchId: order.batchId,
+        farmId,
       });
 
       db.shipments = db.shipments || [];

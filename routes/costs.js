@@ -1,4 +1,18 @@
 const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
 
 function validateCostItem(input, db, isEdit = false) {
   const errors = [];
@@ -44,9 +58,13 @@ export function createCostsRouter(helpers) {
       const db = await loadDb();
       const url = new URL(req.url, `http://${req.headers.host}`);
       const batchId = url.searchParams.get("batchId");
+      const farmId = url.searchParams.get("farmId");
       let costItems = db.costItems || [];
       if (batchId) {
         costItems = costItems.filter((c) => c.batchId === batchId);
+      }
+      if (farmId) {
+        costItems = costItems.filter((c) => c.farmId === farmId);
       }
       return sendJson(res, 200, costItems);
     }
@@ -73,6 +91,8 @@ export function createCostsRouter(helpers) {
         ? Number(input.quantity)
         : undefined;
 
+      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId.trim());
+
       const costItem = {
         id: `COST-${Date.now()}`,
         batchId: input.batchId.trim(),
@@ -82,6 +102,7 @@ export function createCostsRouter(helpers) {
         quantity,
         unit: input.unit?.trim() || undefined,
         description: input.description?.trim() || undefined,
+        farmId: farmId,
       };
 
       if (!db.costItems) db.costItems = [];

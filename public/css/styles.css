@@ -1544,3 +1544,142 @@ button.tiny {
   color: var(--green);
   font-size: 14px;
 }
+
+.header-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.farm-selector {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.farm-selector select {
+  width: auto;
+  min-width: 180px;
+  padding: 7px 10px;
+  font-size: 14px;
+}
+
+.farm-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.farm-toolbar .spacer {
+  flex: 1;
+}
+
+.farm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.farm-stats .stat strong {
+  font-size: 20px;
+}
+
+.farm-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.farm-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.farm-card h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--blue);
+}
+
+.farm-card .farm-id {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.farm-card .farm-info {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.farm-card .farm-info .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.farm-card .farm-info .label {
+  color: var(--muted);
+}
+
+.farm-card .default-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #d7f0e3;
+  color: var(--green);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.farm-card .farm-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.farm-card .farm-actions button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.farm-form {
+  display: grid;
+  gap: 2px;
+}
+
+.farm-form .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 5px;
+}
+
+.farm-form .checkbox-row input {
+  width: auto;
+}
+
+.farm-form .checkbox-row label {
+  margin: 0;
+  display: inline;
+}
+
+@media (max-width: 900px) {
+  .farm-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .header-right {
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+}

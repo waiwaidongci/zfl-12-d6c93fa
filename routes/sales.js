@@ -1,11 +1,32 @@
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
+
 export function createSalesRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
   return async function salesRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/sales") {
       const db = await loadDb();
-      const sales = (db.sales || []).map((s) => enrichSale(s, db));
-      return sendJson(res, 200, sales);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let sales = db.sales || [];
+      if (farmId) {
+        sales = sales.filter((s) => s.farmId === farmId);
+      }
+      const enriched = sales.map((s) => enrichSale(s, db));
+      return sendJson(res, 200, enriched);
     }
 
     if (method === "POST" && pathname === "/api/sales") {
@@ -31,6 +52,8 @@ export function createSalesRouter(helpers) {
         return sendJson(res, 400, { error: "客户不能为空" });
       }
 
+      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
+
       const sale = {
         id: `SALE-${Date.now()}`,
         batchId: input.batchId,
@@ -39,12 +62,14 @@ export function createSalesRouter(helpers) {
         customer: customerName,
         count: Number(input.count),
         unitPrice: Number(input.unitPrice),
+        farmId: farmId,
       };
 
       if (!sale.customerId) {
         delete sale.customerId;
       }
 
+      if (!db.sales) db.sales = [];
       db.sales.push(sale);
       await saveDb(db);
       return sendJson(res, 201, enrichSale(sale, db));

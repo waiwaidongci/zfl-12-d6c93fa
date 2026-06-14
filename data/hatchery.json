@@ -4,7 +4,8 @@
       "id": "PP-01",
       "species": "南美白对虾",
       "count": 320,
-      "note": "春季亲本"
+      "note": "春季亲本",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "batches": [
@@ -16,7 +17,8 @@
       "currentPool": "P-03",
       "estimatedCount": 815000,
       "status": "育苗中",
-      "cost": 12600
+      "cost": 12600,
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "ponds": [
@@ -27,7 +29,8 @@
       "purpose": "虾苗培育",
       "status": "idle",
       "disinfectionDate": "2026-05-28",
-      "note": "标准虾苗培育池，配备独立增氧系统"
+      "note": "标准虾苗培育池，配备独立增氧系统",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "P-02",
@@ -36,7 +39,8 @@
       "purpose": "虾苗培育",
       "status": "idle",
       "disinfectionDate": "2026-05-30",
-      "note": ""
+      "note": "",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "P-03",
@@ -45,7 +49,8 @@
       "purpose": "虾苗培育",
       "status": "active",
       "disinfectionDate": "2026-05-25",
-      "note": "当前养殖南美白对虾 B-260601 批次"
+      "note": "当前养殖南美白对虾 B-260601 批次",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "P-04",
@@ -54,7 +59,8 @@
       "purpose": "暂养池",
       "status": "cleaning",
       "disinfectionDate": "2026-06-12",
-      "note": "消毒作业中，预计 6 月 14 日完成"
+      "note": "消毒作业中，预计 6 月 14 日完成",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "P-05",
@@ -63,7 +69,8 @@
       "purpose": "蟹苗培育",
       "status": "idle",
       "disinfectionDate": "2026-05-20",
-      "note": "计划用于三疣梭子蟹夏季苗种"
+      "note": "计划用于三疣梭子蟹夏季苗种",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "P-06",
@@ -72,7 +79,8 @@
       "purpose": "鱼种培育",
       "status": "maintenance",
       "disinfectionDate": "2026-05-15",
-      "note": "排水阀维修中，预计 6 月 16 日恢复"
+      "note": "排水阀维修中，预计 6 月 16 日恢复",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "records": [
@@ -86,7 +94,8 @@
       "oxygen": 6.1,
       "feed": 18,
       "mortality": 0.8,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781430462130-j2nu",
@@ -98,7 +107,8 @@
       "oxygen": 6.2,
       "feed": 20,
       "mortality": 0.5,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781430462131-97ft",
@@ -110,7 +120,8 @@
       "oxygen": 6,
       "feed": 19,
       "mortality": 0.3,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781431746098-kdyf",
@@ -122,7 +133,8 @@
       "oxygen": 6.3,
       "feed": 20.5,
       "mortality": 0.4,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896459-hi9z",
@@ -134,7 +146,8 @@
       "oxygen": 6.2,
       "feed": 20,
       "mortality": 0.5,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-x6t9",
@@ -146,7 +159,8 @@
       "oxygen": 6,
       "feed": 19,
       "mortality": 0.3,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-kdi3",
@@ -158,7 +172,8 @@
       "oxygen": 5.8,
       "feed": 21,
       "mortality": 0.4,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-1ate",
@@ -170,7 +185,8 @@
       "oxygen": 5.9,
       "feed": 20.5,
       "mortality": 0.3,
-      "abnormal": "少量浮头"
+      "abnormal": "少量浮头",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-4rmj",
@@ -182,7 +198,8 @@
       "oxygen": 6.1,
       "feed": 20,
       "mortality": 0.2,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-6162",
@@ -194,7 +211,8 @@
       "oxygen": 6,
       "feed": 20.5,
       "mortality": 0.4,
-      "abnormal": "无"
+      "abnormal": "无",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "REC-1781435896460-0n9k",
@@ -206,7 +224,8 @@
       "oxygen": 5.9,
       "feed": 20,
       "mortality": 0.3,
-      "abnormal": "死苗50尾"
+      "abnormal": "死苗50尾",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "transfers": [
@@ -217,7 +236,8 @@
       "toPool": "P-03",
       "date": "2026-06-03",
       "count": 900000,
-      "reason": "初次入池"
+      "reason": "初次入池",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "sales": [],
@@ -230,7 +250,8 @@
       "amount": 2800,
       "quantity": 350,
       "unit": "kg",
-      "description": "丰年虫幼体饲料"
+      "description": "丰年虫幼体饲料",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "COST-2",
@@ -240,7 +261,8 @@
       "amount": 1200,
       "quantity": 5,
       "unit": "L",
-      "description": "水质改良剂"
+      "description": "水质改良剂",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "COST-3",
@@ -250,7 +272,8 @@
       "amount": 3500,
       "quantity": 7,
       "unit": "工日",
-      "description": "育苗工人工资"
+      "description": "育苗工人工资",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "COST-4",
@@ -260,7 +283,8 @@
       "amount": 1800,
       "quantity": 600,
       "unit": "kWh",
-      "description": "增氧和加温电费"
+      "description": "增氧和加温电费",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "COST-5",
@@ -270,7 +294,8 @@
       "amount": 500,
       "quantity": 1,
       "unit": "批",
-      "description": "消毒用品及耗材"
+      "description": "消毒用品及耗材",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "customers": [
@@ -320,7 +345,8 @@
       "resolvedAt": "",
       "autoResolved": false,
       "handleHistory": [],
-      "createdAt": "2026-06-14T11:18:16.460Z"
+      "createdAt": "2026-06-14T11:18:16.460Z",
+      "farmId": "FARM-DEFAULT"
     },
     {
       "id": "WARN-1781435896460-n7kq",
@@ -340,7 +366,8 @@
       "resolvedAt": "",
       "autoResolved": false,
       "handleHistory": [],
-      "createdAt": "2026-06-14T11:18:16.460Z"
+      "createdAt": "2026-06-14T11:18:16.460Z",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "warningThresholds": {
@@ -391,7 +418,26 @@
       "afterCount": 815000,
       "difference": -35000,
       "operator": "李场长",
-      "note": "因前期死亡率偏高，实际数量低于系统估算"
+      "note": "因前期死亡率偏高，实际数量低于系统估算",
+      "farmId": "FARM-DEFAULT"
+    }
+  ],
+  "farms": [
+    {
+      "id": "FARM-DEFAULT",
+      "name": "默认场区",
+      "location": "",
+      "note": "系统自动创建的默认场区，包含所有迁移的历史数据",
+      "isDefault": true,
+      "createdAt": "2026-06-14T12:20:31.127Z"
+    },
+    {
+      "id": "FARM-001",
+      "name": "青岛崂山场区",
+      "location": "山东青岛崂山",
+      "note": "第二生产基地",
+      "isDefault": false,
+      "createdAt": "2026-06-14T12:20:48.131Z"
     }
   ]
 }

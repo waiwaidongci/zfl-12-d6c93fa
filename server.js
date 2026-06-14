@@ -16,6 +16,7 @@ import { createInventoriesRouter } from "./routes/inventories.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { createShipmentsRouter } from "./routes/shipments.js";
 import { createDataIoRouter } from "./routes/data-io.js";
+import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm } from "./routes/farms.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -37,11 +38,32 @@ const MIME_TYPES = {
 };
 
 async function loadDb() {
+  let dbNeedsSave = false;
   if (!existsSync(dbPath)) {
     await mkdir(dirname(dbPath), { recursive: true });
     await writeFile(dbPath, JSON.stringify(getInitialSeed(), null, 2));
+    dbNeedsSave = false;
   }
-  return JSON.parse(await readFile(dbPath, "utf8"));
+  const db = JSON.parse(await readFile(dbPath, "utf8"));
+
+  const defaultFarm = ensureDefaultFarm(db);
+  if (defaultFarm) {
+    const migratedCount = migrateDataToFarm(db, defaultFarm);
+    if (migratedCount > 0 || !db.farms || db.farms.length === 0) {
+      dbNeedsSave = true;
+    }
+  }
+
+  if (!db.farms || db.farms.length === 0) {
+    ensureDefaultFarm(db);
+    migrateDataToFarm(db, db.farms[0]);
+    dbNeedsSave = true;
+  }
+
+  if (dbNeedsSave) {
+    await writeFile(dbPath, JSON.stringify(db, null, 2));
+  }
+  return db;
 }
 
 async function saveDb(db) {
@@ -88,6 +110,7 @@ const inventoriesRouter = createInventoriesRouter(helpers);
 const ordersRouter = createOrdersRouter(helpers);
 const shipmentsRouter = createShipmentsRouter(helpers);
 const dataIoRouter = createDataIoRouter(helpers);
+const farmsRouter = createFarmsRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -132,6 +155,9 @@ async function routeApi(req, res, url, method) {
 
   const result12 = await dataIoRouter(req, res, pathname, method);
   if (result12 !== false) return result12;
+
+  const result13 = await farmsRouter(req, res, pathname, method);
+  if (result13 !== false) return result13;
 
   return false;
 }

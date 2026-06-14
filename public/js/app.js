@@ -57,10 +57,13 @@ const forms = {
     '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
   dataio:
     '<h2>数据导入导出</h2><div class="dataio-section"><h3>导出数据</h3><p class="meta">将系统数据导出为 CSV 文件下载，可用于备份或离线处理</p><div class="dataio-export-btns"><button type="button" class="dataio-export-btn" data-export="batches">导出批次</button><button type="button" class="dataio-export-btn" data-export="records">导出每日记录</button><button type="button" class="dataio-export-btn" data-export="transfers">导出分池合池</button><button type="button" class="dataio-export-btn" data-export="sales">导出销售记录</button></div></div><div class="dataio-section"><h3>导入每日水质投喂记录</h3><div class="dataio-field-info" style="margin-top:8px;padding:10px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><p class="meta" style="margin:0 0 6px;"><strong>必填列：</strong>batchId（批次号）、date（日期 YYYY-MM-DD）、temperature（水温℃）、salinity（盐度）、oxygen（溶氧mg/L）、feed（投喂量kg）、mortality（死亡率%）</p><p class="meta" style="margin:0 0 6px;"><strong>选填列：</strong>poolId（池号）、abnormal（异常情况，默认为"无"）</p><p class="meta" style="margin:0;"><strong>说明：</strong>系统会在导入前校验字段缺失、批次不存在、数值非法和重复日期，确认后才会写入 data/hatchery.json。可点击下方「下载模板」获取包含示例的 CSV 模板文件。</p></div><div class="dataio-import-area" style="margin-top:10px;"><input type="file" id="dataioFileInput" accept=".csv" /><button type="button" id="dataioPreviewBtn" disabled>预检导入</button><button type="button" id="dataioDownloadTemplate">下载模板</button><a href="/examples/records_template.csv" download target="_blank" style="margin-left:8px;font-size:13px;color:var(--blue);">查看示例文件 ↗</a></div><div id="dataioPreviewResult" class="hidden"></div></div>',
+  farm:
+    '<h2>场区管理</h2><div class="farm-toolbar"><div class="spacer"></div><button type="button" id="addFarmBtn">+ 新增场区</button></div><div class="farm-stats" id="farmStats"></div><div class="grid" id="farmList"></div>',
 };
 
 let db = {};
 let activeTab = "record";
+let currentFarmId = localStorage.getItem("currentFarmId") || null;
 
 const form = document.querySelector("#recordForm");
 const tabs = document.querySelectorAll(".tabs button");
@@ -82,13 +85,31 @@ async function api(path, options) {
   return data;
 }
 
+function getEffectiveFarmId() {
+  if (currentFarmId && db.farms && db.farms.find((f) => f.id === currentFarmId)) {
+    return currentFarmId;
+  }
+  return db.farms?.find((f) => f.isDefault)?.id || null;
+}
+
+function filterByFarm(items) {
+  const farmId = getEffectiveFarmId();
+  if (!farmId) return items || [];
+  return (items || []).filter((item) => !item.farmId || item.farmId === farmId);
+}
+
 function fillSelects() {
   if (!db.batches || !db.ponds || !db.parentPools) return;
+
+  const batches = filterByFarm(db.batches);
+  const ponds = filterByFarm(db.ponds);
+  const parentPools = filterByFarm(db.parentPools);
+
   document.querySelectorAll('select[name="batchId"]').forEach(
-    (s) => (s.innerHTML = db.batches.map((b) => `<option>${b.id}</option>`).join(""))
+    (s) => (s.innerHTML = batches.map((b) => `<option>${b.id}</option>`).join(""))
   );
 
-  const usablePonds = db.ponds.filter((p) => p.status !== "maintenance");
+  const usablePonds = ponds.filter((p) => p.status !== "maintenance");
   const pondOptions = usablePonds
     .map(
       (p) =>
@@ -103,7 +124,7 @@ function fillSelects() {
 
   document.querySelectorAll('select[name="parentPoolId"]').forEach(
     (s) =>
-      (s.innerHTML = db.parentPools
+      (s.innerHTML = parentPools
         .map((p) => `<option value="${p.id}">${p.species} · ${p.id}</option>`)
         .join(""))
   );
@@ -116,19 +137,24 @@ function fillSelects() {
     s.innerHTML = '<option value="">请选择客户...</option>' + customerOptions;
   });
 
-  batchSelect.innerHTML = db.batches.map((b) => `<option>${b.id}</option>`).join("");
-  if (!batchSelect.value && db.batches[0]) batchSelect.value = db.batches[0].id;
+  batchSelect.innerHTML = batches.map((b) => `<option>${b.id}</option>`).join("");
+  if (!batchSelect.value && batches[0]) batchSelect.value = batches[0].id;
 
-  const batchFilterOptions = db.batches.map((b) => `<option value="${b.id}">${b.id}</option>`).join("");
-  document.querySelectorAll("#inventoryBatchFilter, #costBatchFilter, #warningBatchFilter").forEach((s) => {
+  const batchFilterOptions = batches.map((b) => `<option value="${b.id}">${b.id}</option>`).join("");
+  document.querySelectorAll("#inventoryBatchFilter, #costBatchFilter, #warningBatchFilter, #orderBatchFilter, #shipmentBatchFilter").forEach((s) => {
     const currentValue = s.value;
     s.innerHTML = '<option value="">全部批次</option>' + batchFilterOptions;
-    if (currentValue) s.value = currentValue;
+    if (currentValue && batches.find((b) => b.id === currentValue)) s.value = currentValue;
   });
 }
 
 async function renderTrace() {
   if (!batchSelect.value) return;
+  const batches = filterByFarm(db.batches);
+  if (!batches.find((b) => b.id === batchSelect.value)) {
+    if (batches[0]) batchSelect.value = batches[0].id;
+    else return;
+  }
   const trace = await api("/api/batches/" + batchSelect.value + "/trace");
   batchInfo.textContent =
     trace.batch.species +
@@ -431,12 +457,13 @@ function statusBadge(status) {
 }
 
 function renderPondStats() {
+  const ponds = filterByFarm(db.ponds);
   const stats = {
-    total: db.ponds.length,
-    active: db.ponds.filter((p) => p.status === "active").length,
-    idle: db.ponds.filter((p) => p.status === "idle").length,
-    cleaning: db.ponds.filter((p) => p.status === "cleaning").length,
-    maintenance: db.ponds.filter((p) => p.status === "maintenance").length,
+    total: ponds.length,
+    active: ponds.filter((p) => p.status === "active").length,
+    idle: ponds.filter((p) => p.status === "idle").length,
+    cleaning: ponds.filter((p) => p.status === "cleaning").length,
+    maintenance: ponds.filter((p) => p.status === "maintenance").length,
   };
   document.getElementById("pondStats").innerHTML = [
     ["池子总数", stats.total],
@@ -454,7 +481,7 @@ function renderPondStats() {
 function renderPondList() {
   const search = document.getElementById("pondSearch")?.value?.trim() || "";
   const statusFilter = document.getElementById("pondStatusFilter")?.value || "";
-  let ponds = db.ponds;
+  let ponds = filterByFarm(db.ponds);
   if (search) {
     const lower = search.toLowerCase();
     ponds = ponds.filter(
@@ -844,7 +871,7 @@ function bindCustomerEvents() {
 }
 
 function renderInventoryStats() {
-  const inventories = db.inventories || [];
+  const inventories = filterByFarm(db.inventories || []);
   const batchFilter = document.getElementById("inventoryBatchFilter")?.value || "";
   let filtered = inventories;
   if (batchFilter) {
@@ -873,7 +900,7 @@ function renderInventoryStats() {
 }
 
 function renderInventoryList() {
-  const inventories = db.inventories || [];
+  const inventories = filterByFarm(db.inventories || []);
   const batchFilter = document.getElementById("inventoryBatchFilter")?.value || "";
   let filtered = inventories;
   if (batchFilter) {
@@ -940,12 +967,13 @@ function renderInventoryList() {
 
 function renderInventories() {
   const batchFilter = document.getElementById("inventoryBatchFilter");
-  if (batchFilter && db.batches) {
+  const batches = filterByFarm(db.batches || []);
+  if (batchFilter && batches.length) {
     const currentVal = batchFilter.value;
     batchFilter.innerHTML =
       '<option value="">全部批次</option>' +
-      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
-    batchFilter.value = currentVal;
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
   }
   renderInventoryStats();
   renderInventoryList();
@@ -1049,7 +1077,7 @@ function bindInventoryEvents() {
 }
 
 function renderCostStats() {
-  const costItems = db.costItems || [];
+  const costItems = filterByFarm(db.costItems || []);
   const batchFilter = document.getElementById("costBatchFilter")?.value || "";
   let filtered = costItems;
   if (batchFilter) {
@@ -1078,7 +1106,7 @@ function renderCostStats() {
 }
 
 function renderCostList() {
-  const costItems = db.costItems || [];
+  const costItems = filterByFarm(db.costItems || []);
   const batchFilter = document.getElementById("costBatchFilter")?.value || "";
   let filtered = costItems;
   if (batchFilter) {
@@ -1136,12 +1164,13 @@ function renderCostList() {
 
 function renderCosts() {
   const batchFilter = document.getElementById("costBatchFilter");
-  if (batchFilter && db.batches) {
+  const batches = filterByFarm(db.batches || []);
+  if (batchFilter && batches.length) {
     const currentVal = batchFilter.value;
     batchFilter.innerHTML =
       '<option value="">全部批次</option>' +
-      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
-    batchFilter.value = currentVal;
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
   }
   renderCostStats();
   renderCostList();
@@ -1263,7 +1292,7 @@ function bindSaleEvents() {
 }
 
 function renderWarningStats() {
-  const warnings = db.warnings || [];
+  const warnings = filterByFarm(db.warnings || []);
   const total = warnings.length;
   const pending = warnings.filter((w) => w.status === "pending").length;
   const processing = warnings.filter((w) => w.status === "processing").length;
@@ -1283,7 +1312,7 @@ function renderWarningStats() {
 }
 
 function renderWarningList() {
-  const warnings = db.warnings || [];
+  const warnings = filterByFarm(db.warnings || []);
   const levelFilter = document.getElementById("warningLevelFilter")?.value || "";
   const statusFilter = document.getElementById("warningStatusFilter")?.value || "";
   const batchFilter = document.getElementById("warningBatchFilter")?.value || "";
@@ -1487,12 +1516,13 @@ async function openWarningDetailModal(warningId) {
 
 function renderWarnings() {
   const batchFilter = document.getElementById("warningBatchFilter");
-  if (batchFilter && db.batches) {
+  const batches = filterByFarm(db.batches || []);
+  if (batchFilter && batches.length) {
     const currentVal = batchFilter.value;
     batchFilter.innerHTML =
       '<option value="">全部批次</option>' +
-      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
-    batchFilter.value = currentVal;
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
   }
   renderWarningStats();
   renderWarningList();
@@ -1641,7 +1671,7 @@ function bindWarningEvents() {
 }
 
 function renderOrderStats() {
-  const orders = db.orders || [];
+  const orders = filterByFarm(db.orders || []);
   const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
   const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
   let filtered = orders;
@@ -1676,7 +1706,7 @@ function renderOrderStats() {
 }
 
 function renderOrderList() {
-  const orders = db.orders || [];
+  const orders = filterByFarm(db.orders || []);
   const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
   const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
   let filtered = orders;
@@ -1743,12 +1773,13 @@ function renderOrderList() {
 
 function renderOrders() {
   const batchFilter = document.getElementById("orderBatchFilter");
-  if (batchFilter && db.batches) {
+  const batches = filterByFarm(db.batches || []);
+  if (batchFilter && batches.length) {
     const currentVal = batchFilter.value;
     batchFilter.innerHTML =
       '<option value="">全部批次</option>' +
-      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
-    batchFilter.value = currentVal;
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
   }
   renderOrderStats();
   renderOrderList();
@@ -1895,7 +1926,7 @@ function bindOrderEvents() {
 }
 
 function renderShipmentStats() {
-  const shipments = db.shipments || [];
+  const shipments = filterByFarm(db.shipments || []);
   const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
   let filtered = shipments;
   if (batchFilter) filtered = filtered.filter((s) => s.batchId === batchFilter);
@@ -1916,7 +1947,7 @@ function renderShipmentStats() {
 }
 
 function renderShipmentList() {
-  const shipments = db.shipments || [];
+  const shipments = filterByFarm(db.shipments || []);
   const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
   const orderFilter = document.getElementById("shipmentStatusFilter")?.value || "";
   let filtered = shipments;
@@ -1972,16 +2003,18 @@ function renderShipmentList() {
 function renderShipments() {
   const batchFilter = document.getElementById("shipmentBatchFilter");
   const orderFilter = document.getElementById("shipmentStatusFilter");
-  if (batchFilter && db.batches) {
+  const batches = filterByFarm(db.batches || []);
+  const orders = filterByFarm(db.orders || []);
+  if (batchFilter && batches.length) {
     const currentVal = batchFilter.value;
     batchFilter.innerHTML =
       '<option value="">全部批次</option>' +
-      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
-    batchFilter.value = currentVal;
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
   }
-  if (orderFilter && db.orders) {
+  if (orderFilter && orders.length) {
     const currentVal = orderFilter.value;
-    const validOrders = (db.orders || []).filter(
+    const validOrders = orders.filter(
       (o) => o.status !== "cancelled" && o.remainingQuantity > 0
     );
     orderFilter.innerHTML =
@@ -1992,7 +2025,7 @@ function renderShipments() {
           return `<option value="${o.id}">${o.id} · ${customerName} · 剩余 ${o.remainingQuantity.toLocaleString()} 尾</option>`;
         })
         .join("");
-    orderFilter.value = currentVal;
+    if (currentVal && validOrders.find((o) => o.id === currentVal)) orderFilter.value = currentVal;
   }
   renderShipmentStats();
   renderShipmentList();
@@ -2108,8 +2141,200 @@ function bindShipmentEvents() {
   if (orderFilter) orderFilter.onchange = () => { renderShipmentStats(); renderShipmentList(); };
 }
 
+function renderFarmSelect() {
+  const farmSelect = document.getElementById("farmSelect");
+  if (!farmSelect) return;
+  const farms = db.farms || [];
+  const currentVal = currentFarmId;
+  farmSelect.innerHTML = farms
+    .map((f) => `<option value="${f.id}" ${f.id === currentVal ? "selected" : ""}>${f.name}${f.isDefault ? " (默认)" : ""}</option>`)
+    .join("");
+  farmSelect.onchange = (e) => {
+    setCurrentFarm(e.target.value);
+  };
+}
+
+function renderFarmStats() {
+  const farms = db.farms || [];
+  const total = farms.length;
+  const hasDefault = farms.some((f) => f.isDefault);
+  const stats = [
+    ["场区总数", total],
+    ["默认场区", hasDefault ? "已设置" : "未设置"],
+  ];
+  document.getElementById("farmStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
+    .join("");
+}
+
+function renderFarmList() {
+  const farms = db.farms || [];
+  const list = document.getElementById("farmList");
+  if (!farms.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无场区数据，点击右上角「新增场区」添加</div>`;
+    return;
+  }
+  list.innerHTML = farms
+    .map(
+      (f) => `
+    <div class="farm-card ${f.id === currentFarmId ? "active" : ""}" data-id="${f.id}">
+      <h3>${f.name}${f.isDefault ? '<span class="status-badge status-active" style="margin-left:8px;">默认</span>' : ""}</h3>
+      <div class="farm-id">${f.id}</div>
+      ${f.id === currentFarmId ? '<div class="meta" style="margin-top:8px;color:var(--blue);">✓ 当前场区</div>' : ""}
+      ${
+        f.address
+          ? `<div class="row"><span class="label">地址</span><span>${f.address}</span></div>`
+          : ""
+      }
+      ${
+        f.contact
+          ? `<div class="row"><span class="label">联系人</span><span>${f.contact}</span></div>`
+          : ""
+      }
+      ${
+        f.phone
+          ? `<div class="row"><span class="label">电话</span><span>${f.phone}</span></div>`
+          : ""
+      }
+      ${
+        f.note
+          ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${f.note}</div>`
+          : ""
+      }
+      <div class="farm-actions">
+        ${f.id !== currentFarmId ? `<button type="button" data-action="switch">切换到此</button>` : ""}
+        ${!f.isDefault ? `<button type="button" class="secondary" data-action="default">设为默认</button>` : ""}
+        <button type="button" class="secondary" data-action="edit">编辑</button>
+        ${!f.isDefault ? `<button type="button" class="danger" data-action="delete">删除</button>` : ""}
+      </div>
+    </div>
+  `
+    )
+    .join("");
+
+  list.querySelectorAll(".farm-card").forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const action = btn.dataset.action;
+        if (action === "switch") {
+          setCurrentFarm(id);
+        } else if (action === "default") {
+          setDefaultFarm(id);
+        } else if (action === "edit") {
+          openFarmModal(id);
+        } else if (action === "delete") {
+          deleteFarm(id);
+        }
+      };
+    });
+  });
+}
+
+function renderFarms() {
+  renderFarmStats();
+  renderFarmList();
+}
+
+function bindFarmEvents() {
+  const addBtn = document.getElementById("addFarmBtn");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openFarmModal(); };
+}
+
+function openFarmModal(farmId = null) {
+  const farms = db.farms || [];
+  const farm = farmId ? farms.find((f) => f.id === farmId) : null;
+  const isEdit = !!farm;
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${isEdit ? "编辑场区" : "新增场区"}</h2>
+      <form id="farmForm">
+        <label>场区编号 (ID)</label>
+        <input name="id" required value="${farm?.id || ""}" ${
+    isEdit ? "readonly" : ""
+  } placeholder="如 F-01">
+        <label>场区名称</label>
+        <input name="name" required value="${farm?.name || ""}" placeholder="如 青岛育苗一场">
+        <label>地址</label>
+        <input name="address" value="${farm?.address || ""}" placeholder="选填">
+        <label>联系人</label>
+        <input name="contact" value="${farm?.contact || ""}" placeholder="选填">
+        <label>电话</label>
+        <input name="phone" value="${farm?.phone || ""}" placeholder="选填">
+        <label>备注</label>
+        <textarea name="note">${farm?.note || ""}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">${isEdit ? "保存修改" : "新增场区"}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+  modal.querySelector("#farmForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      if (isEdit) {
+        await api("/api/farms/" + farmId, { method: "PUT", body: JSON.stringify(data) });
+      } else {
+        if (!farms.length) data.isDefault = true;
+        await api("/api/farms", { method: "POST", body: JSON.stringify(data) });
+      }
+      modal.remove();
+      await load();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+async function setDefaultFarm(farmId) {
+  try {
+    await api("/api/farms/" + farmId + "/set-default", { method: "PATCH" });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function setCurrentFarm(farmId) {
+  currentFarmId = farmId;
+  localStorage.setItem("currentFarmId", farmId || "");
+  load();
+}
+
+async function deleteFarm(farmId) {
+  const farms = db.farms || [];
+  const farm = farms.find((f) => f.id === farmId);
+  if (!farm) return;
+  if (farm.isDefault) {
+    alert("默认场区不能删除");
+    return;
+  }
+  if (!confirm("确定要删除场区「" + farm.name + "」吗？只有无关联数据的场区才能删除。")) return;
+  try {
+    await api("/api/farms/" + farmId, { method: "DELETE" });
+    if (currentFarmId === farmId) {
+      currentFarmId = db.farms.find((f) => f.isDefault)?.id || null;
+      localStorage.setItem("currentFarmId", currentFarmId || "");
+    }
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 function renderWarningBanner() {
-  const warnings = db.warnings || [];
+  const warnings = filterByFarm(db.warnings || []);
   const pending = warnings.filter((w) => w.status === "pending" || w.status === "processing");
   const banner = document.getElementById("warningBanner");
   if (!pending.length) {
@@ -2350,6 +2575,7 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
@@ -2364,6 +2590,7 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
@@ -2379,6 +2606,7 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.remove("hidden");
     inventoryContainer.innerHTML = forms[tab];
     fillSelects();
@@ -2391,6 +2619,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
@@ -2405,6 +2634,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const warningContainer = document.getElementById("warningContainer");
     warningContainer.classList.remove("hidden");
@@ -2421,6 +2651,7 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const orderContainer = document.getElementById("orderContainer");
     orderContainer.classList.remove("hidden");
@@ -2436,6 +2667,8 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const shipmentContainer = document.getElementById("shipmentContainer");
     shipmentContainer.classList.remove("hidden");
@@ -2443,6 +2676,23 @@ function setTab(tab) {
     fillSelects();
     renderShipments();
     bindShipmentEvents();
+  } else if (tab === "farm") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const farmContainer = document.getElementById("farmContainer");
+    farmContainer.classList.remove("hidden");
+    farmContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderFarms();
+    bindFarmEvents();
   } else if (tab === "dataio") {
     form.innerHTML = "";
     form.classList.add("hidden");
@@ -2453,6 +2703,7 @@ function setTab(tab) {
     document.getElementById("orderContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const dataioContainer = document.getElementById("dataioContainer");
     dataioContainer.classList.remove("hidden");
@@ -2469,7 +2720,7 @@ function setTab(tab) {
     document.getElementById("orderContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
-    document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
@@ -2481,6 +2732,7 @@ function setTab(tab) {
 
 async function load() {
   db = await api("/api/state");
+  if (!db.farms) db.farms = [];
   if (!db.customers) db.customers = [];
   if (!db.costItems) db.costItems = [];
   if (!db.warnings) db.warnings = [];
@@ -2488,6 +2740,17 @@ async function load() {
   if (!db.inventories) db.inventories = [];
   if (!db.orders) db.orders = [];
   if (!db.shipments) db.shipments = [];
+
+  if (!db.farms.length) {
+    db.farms = [{ id: "default", name: "默认场区", isDefault: true }];
+  }
+  const defaultFarm = db.farms.find((f) => f.isDefault);
+  if (!currentFarmId || !db.farms.find((f) => f.id === currentFarmId)) {
+    currentFarmId = defaultFarm?.id || db.farms[0]?.id || null;
+    localStorage.setItem("currentFarmId", currentFarmId || "");
+  }
+  renderFarmSelect();
+
   try {
     const enrichedCustomers = await api("/api/customers");
     db.customers = enrichedCustomers;
@@ -2503,6 +2766,19 @@ async function load() {
     db.shipments = enrichedShipments;
   } catch (e) {
   }
+
+  db.ponds = filterByFarm(db.ponds || []);
+  db.batches = filterByFarm(db.batches || []);
+  db.parentPools = filterByFarm(db.parentPools || []);
+  db.records = filterByFarm(db.records || []);
+  db.transfers = filterByFarm(db.transfers || []);
+  db.sales = filterByFarm(db.sales || []);
+  db.costItems = filterByFarm(db.costItems || []);
+  db.warnings = filterByFarm(db.warnings || []);
+  db.inventories = filterByFarm(db.inventories || []);
+  db.orders = filterByFarm(db.orders || []);
+  db.shipments = filterByFarm(db.shipments || []);
+
   fillSelects();
   renderWarningBanner();
   if (activeTab === "pond") {
@@ -2528,6 +2804,9 @@ async function load() {
     bindShipmentEvents();
   } else if (activeTab === "dataio") {
     bindDataIoEvents();
+  } else if (activeTab === "farm") {
+    renderFarms();
+    bindFarmEvents();
   } else {
     renderTrace();
     if (activeTab === "sale") {
@@ -2541,8 +2820,10 @@ batchSelect.onchange = renderTrace;
 document.querySelector("#reload").onclick = load;
 form.onsubmit = async (event) => {
   event.preventDefault();
-  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost" || activeTab === "warning" || activeTab === "dataio") return;
+  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost" || activeTab === "warning" || activeTab === "dataio" || activeTab === "farm") return;
   const data = Object.fromEntries(new FormData(form).entries());
+  const farmId = getEffectiveFarmId();
+  if (farmId) data.farmId = farmId;
   const path =
     activeTab === "record"
       ? "/api/records"

@@ -12,7 +12,13 @@
         <h1>海水养殖苗种场追踪</h1>
         <div class="meta">亲本、孵化批次、育苗池档案、水质投喂、分池出苗、盘点校准</div>
       </div>
-      <button id="reload">刷新</button>
+      <div class="header-right">
+        <div class="farm-selector">
+          <label class="meta" for="farmSelect">当前场区：</label>
+          <select id="farmSelect"></select>
+        </div>
+        <button id="reload">刷新</button>
+      </div>
     </header>
     <main>
       <section>
@@ -27,6 +33,7 @@
           <button data-tab="batch">新建批次</button>
           <button data-tab="pond">育苗池档案</button>
           <button data-tab="customer">客户档案</button>
+          <button data-tab="farm">场区管理</button>
           <button data-tab="dataio">数据导入导出</button>
         </div>
         <form id="recordForm"></form>
@@ -37,6 +44,7 @@
         <div id="warningContainer" class="hidden"></div>
         <div id="orderContainer" class="hidden"></div>
         <div id="shipmentContainer" class="hidden"></div>
+        <div id="farmContainer" class="hidden"></div>
         <div id="dataioContainer" class="hidden"></div>
       </section>
       <section>

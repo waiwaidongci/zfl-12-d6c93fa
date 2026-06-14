@@ -1,5 +1,14 @@
 const VALID_STATUSES = ["active", "idle", "cleaning", "maintenance"];
 const VALID_PURPOSES = ["虾苗培育", "蟹苗培育", "贝苗培育", "鱼种培育", "暂养池", "其他"];
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
 
 function validatePond(input, isUpdate = false) {
   const errors = [];
@@ -47,6 +56,7 @@ function sanitizePond(input, existing = null) {
     status: "idle",
     disinfectionDate: "",
     note: "",
+    farmId: "",
   };
 
   return {
@@ -60,6 +70,7 @@ function sanitizePond(input, existing = null) {
         ? input.disinfectionDate
         : base.disinfectionDate,
     note: input.note !== undefined ? input.note.trim() : base.note,
+    farmId: input.farmId !== undefined ? input.farmId.trim() : base.farmId,
   };
 }
 
@@ -69,7 +80,13 @@ export function createPondsRouter(helpers) {
   return async function pondsRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/ponds") {
       const db = await loadDb();
-      return sendJson(res, 200, db.ponds);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let ponds = db.ponds;
+      if (farmId) {
+        ponds = ponds.filter((p) => p.farmId === farmId);
+      }
+      return sendJson(res, 200, ponds);
     }
 
     const pondsMatch = pathname.match(/^\/api\/ponds\/([^/]+)$/);
@@ -131,7 +148,8 @@ export function createPondsRouter(helpers) {
       if (db.ponds.some((p) => p.id === input.id.trim())) {
         return sendJson(res, 409, { error: "pond_exists", message: "池号已存在" });
       }
-      const newPond = sanitizePond({ ...input, id: input.id.trim() });
+      const farmId = input.farmId || getDefaultFarmId(db);
+      const newPond = sanitizePond({ ...input, id: input.id.trim(), farmId });
       db.ponds.push(newPond);
       await saveDb(db);
       return sendJson(res, 201, newPond);

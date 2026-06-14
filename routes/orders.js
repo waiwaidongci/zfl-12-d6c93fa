@@ -1,4 +1,18 @@
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
 
 const ORDER_STATUS_LABELS = {
   pending: "待发货",
@@ -50,6 +64,7 @@ function sanitizeOrder(input, existing = null) {
     status: "pending",
     note: "",
     createdAt: "",
+    farmId: "",
   };
 
   return {
@@ -63,6 +78,7 @@ function sanitizeOrder(input, existing = null) {
     status: input.status !== undefined ? input.status : base.status,
     note: input.note !== undefined ? (input.note || "").trim() : base.note,
     createdAt: base.createdAt || new Date().toISOString(),
+    farmId: input.farmId !== undefined ? input.farmId.trim() : base.farmId,
   };
 }
 
@@ -120,8 +136,14 @@ export function createOrdersRouter(helpers) {
   return async function ordersRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/orders") {
       const db = await loadDb();
-      const orders = (db.orders || []).map((o) => enrichOrder(o, db));
-      return sendJson(res, 200, orders);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let orders = db.orders || [];
+      if (farmId) {
+        orders = orders.filter((o) => o.farmId === farmId);
+      }
+      const enriched = orders.map((o) => enrichOrder(o, db));
+      return sendJson(res, 200, enriched);
     }
 
     if (method === "POST" && pathname === "/api/orders") {
@@ -150,12 +172,15 @@ export function createOrdersRouter(helpers) {
         return sendJson(res, 400, { error: "客户不能为空" });
       }
 
+      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId.trim());
+
       const order = sanitizeOrder({
         ...input,
         id: `ORD-${Date.now()}`,
         customerId,
         customerName,
         status: "pending",
+        farmId,
       });
 
       if (!order.customerId) {

@@ -1,6 +1,16 @@
 import { enrichOrder } from "./orders.js";
 import { enrichShipment, getBatchAvailableQuantity } from "./shipments.js";
 
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
 function sum(items, key) {
   return Number(
     items.reduce((total, item) => total + Number(item[key] || 0), 0).toFixed(2)
@@ -180,7 +190,13 @@ export function createBatchesRouter(helpers) {
 
     if (method === "GET" && pathname === "/api/batches") {
       const db = await loadDb();
-      return sendJson(res, 200, db.batches);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let batches = db.batches;
+      if (farmId) {
+        batches = batches.filter((b) => b.farmId === farmId);
+      }
+      return sendJson(res, 200, batches);
     }
 
     if (method === "POST" && pathname === "/api/batches") {
@@ -192,6 +208,7 @@ export function createBatchesRouter(helpers) {
       if (db.batches.some((b) => b.id === input.id.trim())) {
         return sendJson(res, 409, { error: "批次号已存在" });
       }
+      const farmId = input.farmId || getDefaultFarmId(db);
       const batch = {
         id: input.id.trim(),
         species: input.species || "",
@@ -201,6 +218,7 @@ export function createBatchesRouter(helpers) {
         estimatedCount: Number(input.estimatedCount) || 0,
         status: "育苗中",
         cost: Number(input.cost || 0),
+        farmId: farmId,
       };
       db.batches.push(batch);
       db.transfers.push({
@@ -211,6 +229,7 @@ export function createBatchesRouter(helpers) {
         date: batch.hatchDate,
         count: batch.estimatedCount,
         reason: "新批次入池",
+        farmId: farmId,
       });
       await saveDb(db);
       return sendJson(res, 201, batch);

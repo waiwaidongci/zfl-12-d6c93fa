@@ -1,17 +1,43 @@
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
+
 export function createWarningsRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
   return async function warningsRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/warnings") {
       const db = await loadDb();
-      return sendJson(res, 200, db.warnings || []);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let warnings = db.warnings || [];
+      if (farmId) {
+        warnings = warnings.filter((w) => w.farmId === farmId);
+      }
+      return sendJson(res, 200, warnings);
     }
 
     if (method === "GET" && pathname === "/api/warnings/pending") {
       const db = await loadDb();
-      const pending = (db.warnings || []).filter(
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let pending = (db.warnings || []).filter(
         (w) => w.status === "pending" || w.status === "processing"
       );
+      if (farmId) {
+        pending = pending.filter((w) => w.farmId === farmId);
+      }
       return sendJson(res, 200, pending);
     }
 
@@ -231,6 +257,7 @@ export function generateWarningsFromRecord(record, db, regenerateAllStatuses = f
     autoResolved: false,
     handleHistory: [],
     createdAt: new Date().toISOString(),
+    farmId: record.farmId || getFarmIdForBatch(db, record.batchId),
   };
 
   db.warnings.push(warning);

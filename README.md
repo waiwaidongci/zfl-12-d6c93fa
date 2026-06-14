@@ -95,3 +95,118 @@ npm start
 4. 填写盘点人和备注（选填）
 5. 点击「保存盘点」，系统会自动更新批次估算数量并生成盘点记录
 6. 在批次追溯页面的时间轴中可以看到每次盘点校准的详情和数量变化
+
+## 多场区管理
+
+### 功能概述
+
+系统支持在同一个应用中管理多个苗种场区（Farms），所有业务数据（亲本池、育苗池、批次、记录、流转、销售、成本、预警、盘点、订单、发货）均归属于特定场区。页面顶部可切换当前场区，切换后仅显示对应场区的数据。
+
+客户档案为跨场区共享数据，同一个客户可从多个场区采购。
+
+### 场区管理页面
+
+在「场区管理」标签页可以：
+- 查看所有场区列表及其数据统计
+- 新增场区（填写场区编号、名称、位置、备注）
+- 编辑已有场区信息
+- 设置默认场区
+- 删除空场区（无关联数据时才能删除）
+
+### 顶部场区切换器
+
+页面顶部右侧显示场区选择下拉框：
+- 选择后立即切换当前场区
+- 当前场区选择会保存在浏览器 localStorage 中，刷新页面后保持
+- 切换场区后，所有列表、表单选项、统计数据、批次追溯都会按新场区过滤
+
+### 数据归属规则
+
+所有业务数据均带有 `farmId` 字段标识所属场区：
+- **亲本池 (parentPools)**：直接归属场区
+- **育苗池 (ponds)**：直接归属场区
+- **批次 (batches)**：直接归属场区，子数据（记录、流转、销售、成本、盘点、预警）从批次继承
+- **记录 (records)**：从关联批次继承 farmId
+- **流转 (transfers)**：从关联批次继承 farmId
+- **销售 (sales)**：从关联批次继承 farmId
+- **成本 (costItems)**：从关联批次继承 farmId
+- **预警 (warnings)**：从关联批次继承 farmId
+- **盘点 (inventories)**：从关联批次继承 farmId
+- **订单 (orders)**：从关联批次继承 farmId
+- **发货 (shipments)**：从关联订单的批次继承 farmId
+- **客户 (customers)**：不归属场区，跨场区共享
+
+### API 过滤
+
+所有列表 API 均支持 `?farmId=XXX` 查询参数过滤：
+```
+GET /api/ponds?farmId=FARM-DEFAULT
+GET /api/batches?farmId=FARM-001
+GET /api/records?farmId=FARM-DEFAULT
+GET /api/transfers?farmId=FARM-DEFAULT
+GET /api/sales?farmId=FARM-DEFAULT
+GET /api/costs?farmId=FARM-DEFAULT
+GET /api/warnings?farmId=FARM-DEFAULT
+GET /api/inventories?farmId=FARM-DEFAULT
+GET /api/orders?farmId=FARM-DEFAULT
+GET /api/shipments?farmId=FARM-DEFAULT
+GET /api/export/batches?farmId=FARM-DEFAULT
+GET /api/export/records?farmId=FARM-DEFAULT
+GET /api/export/transfers?farmId=FARM-DEFAULT
+GET /api/export/sales?farmId=FARM-DEFAULT
+```
+
+场区管理 API：
+```
+GET    /api/farms                    # 获取所有场区
+GET    /api/farms/default            # 获取默认场区
+GET    /api/farms/:id                # 获取单个场区
+POST   /api/farms                    # 新增场区
+PUT    /api/farms/:id                # 更新场区
+DELETE /api/farms/:id                # 删除场区（需无关联数据且非默认）
+PATCH  /api/farms/:id/set-default    # 设为默认场区
+```
+
+## 数据迁移说明（升级到多场区版本）
+
+### 自动迁移机制
+
+从旧版本（无 `farmId` 字段）升级时，系统启动时会自动执行数据迁移：
+
+1. **创建默认场区**：自动创建 ID 为 `FARM-DEFAULT`、名称为「默认场区」的默认场区
+2. **数据归属分配**：为所有没有 `farmId` 字段的旧数据自动分配默认场区 ID
+3. **自动保存**：迁移完成后自动保存到 `data/hatchery.json`
+
+迁移覆盖的数据表：
+- parentPools（亲本池）
+- ponds（育苗池）
+- batches（批次）
+- records（每日记录）
+- transfers（分池合池）
+- sales（销售记录）
+- costItems（成本项目）
+- orders（订单）
+- shipments（发货记录）
+- warnings（预警）
+- inventories（盘点记录）
+
+### 升级步骤
+
+1. **备份数据**：升级前请先备份 `data/hatchery.json` 文件
+2. **替换代码**：将新版本代码部署到服务器
+3. **启动服务**：运行 `npm start`，系统会自动执行数据迁移
+4. **验证数据**：访问系统，默认显示「默认场区」，检查所有历史数据是否完整
+5. **新增场区**：在「场区管理」页面添加新场区
+6. **分配数据**：如有需要，可通过数据库工具将数据迁移到新区场（高级操作）
+
+### 回滚方案
+
+如遇问题，可将备份的 `data/hatchery.json` 恢复到原位置并重启服务即可回滚。
+
+### 注意事项
+
+- 默认场区无法删除，如需删除请先将其他场区设为默认
+- 删除场区前需确保该区无任何关联数据，否则系统会拒绝删除
+- 客户数据不分区，迁移时不受影响
+- 数据迁移是幂等操作，多次启动不会重复迁移或丢失数据
+- 新建数据时会自动关联当前选择的场区，无需手动填写

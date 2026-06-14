@@ -1,12 +1,33 @@
 import { generateWarningsFromRecord, removeWarningsForRecord } from "./warnings.js";
 
+const DEFAULT_FARM_ID = "FARM-DEFAULT";
+
+function getDefaultFarmId(db) {
+  if (db.farms && db.farms.length > 0) {
+    const def = db.farms.find((f) => f.isDefault);
+    return def ? def.id : db.farms[0].id;
+  }
+  return DEFAULT_FARM_ID;
+}
+
+function getFarmIdForBatch(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  return batch?.farmId || getDefaultFarmId(db);
+}
+
 export function createRecordsRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
   return async function recordsRouter(req, res, pathname, method) {
     if (method === "GET" && pathname === "/api/records") {
       const db = await loadDb();
-      return sendJson(res, 200, db.records);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId");
+      let records = db.records;
+      if (farmId) {
+        records = records.filter((r) => r.farmId === farmId);
+      }
+      return sendJson(res, 200, records);
     }
 
     if (method === "POST" && pathname === "/api/records") {
@@ -18,6 +39,7 @@ export function createRecordsRouter(helpers) {
       if (!db.batches.some((b) => b.id === input.batchId)) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
+      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
       const record = {
         id: `REC-${Date.now()}`,
         batchId: input.batchId,
@@ -29,10 +51,14 @@ export function createRecordsRouter(helpers) {
         feed: Number(input.feed),
         mortality: Number(input.mortality),
         abnormal: input.abnormal || "无",
+        farmId: farmId,
       };
       db.records.push(record);
 
       const generatedWarnings = generateWarningsFromRecord(record, db);
+      for (const w of generatedWarnings) {
+        w.farmId = farmId;
+      }
 
       await saveDb(db);
       return sendJson(res, 201, { record, warnings: generatedWarnings });
