@@ -175,7 +175,7 @@ export function validateRecordsCsv(parsed, db) {
         });
       }
       if (seenKeys.has(key)) {
-        warnings.push({
+        rowErrors.push({
           type: "duplicate_in_file",
           field: "date",
           row: rowNum,

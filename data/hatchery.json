@@ -123,6 +123,90 @@
       "feed": 20.5,
       "mortality": 0.4,
       "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896459-hi9z",
+      "batchId": "B-260601",
+      "date": "2026-07-01",
+      "poolId": "P-03",
+      "temperature": 28,
+      "salinity": 22,
+      "oxygen": 6.2,
+      "feed": 20,
+      "mortality": 0.5,
+      "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896460-x6t9",
+      "batchId": "B-260601",
+      "date": "2026-07-02",
+      "poolId": "P-03",
+      "temperature": 27.8,
+      "salinity": 21.5,
+      "oxygen": 6,
+      "feed": 19,
+      "mortality": 0.3,
+      "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896460-kdi3",
+      "batchId": "B-260601",
+      "date": "2026-07-03",
+      "poolId": "P-03",
+      "temperature": 27.5,
+      "salinity": 22.5,
+      "oxygen": 5.8,
+      "feed": 21,
+      "mortality": 0.4,
+      "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896460-1ate",
+      "batchId": "B-260601",
+      "date": "2026-07-04",
+      "poolId": "P-03",
+      "temperature": 28.1,
+      "salinity": 22,
+      "oxygen": 5.9,
+      "feed": 20.5,
+      "mortality": 0.3,
+      "abnormal": "少量浮头"
+    },
+    {
+      "id": "REC-1781435896460-4rmj",
+      "batchId": "B-260601",
+      "date": "2026-07-05",
+      "poolId": "P-03",
+      "temperature": 27.9,
+      "salinity": 21.8,
+      "oxygen": 6.1,
+      "feed": 20,
+      "mortality": 0.2,
+      "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896460-6162",
+      "batchId": "B-260601",
+      "date": "2026-07-06",
+      "poolId": "P-03",
+      "temperature": 28.3,
+      "salinity": 22.2,
+      "oxygen": 6,
+      "feed": 20.5,
+      "mortality": 0.4,
+      "abnormal": "无"
+    },
+    {
+      "id": "REC-1781435896460-0n9k",
+      "batchId": "B-260601",
+      "date": "2026-07-07",
+      "poolId": "P-03",
+      "temperature": 28,
+      "salinity": 22,
+      "oxygen": 5.9,
+      "feed": 20,
+      "mortality": 0.3,
+      "abnormal": "死苗50尾"
     }
   ],
   "transfers": [
@@ -217,7 +301,48 @@
   ],
   "orders": [],
   "shipments": [],
-  "warnings": [],
+  "warnings": [
+    {
+      "id": "WARN-1781435896460-tk0u",
+      "batchId": "B-260601",
+      "recordId": "REC-1781435896460-1ate",
+      "poolId": "P-03",
+      "date": "2026-07-04",
+      "level": "yellow",
+      "reasons": [
+        "异常文本含关键词：浮头"
+      ],
+      "status": "pending",
+      "handler": "",
+      "handleNote": "",
+      "handleDate": "",
+      "processingAt": "",
+      "resolvedAt": "",
+      "autoResolved": false,
+      "handleHistory": [],
+      "createdAt": "2026-06-14T11:18:16.460Z"
+    },
+    {
+      "id": "WARN-1781435896460-n7kq",
+      "batchId": "B-260601",
+      "recordId": "REC-1781435896460-0n9k",
+      "poolId": "P-03",
+      "date": "2026-07-07",
+      "level": "yellow",
+      "reasons": [
+        "异常文本含关键词：死苗"
+      ],
+      "status": "pending",
+      "handler": "",
+      "handleNote": "",
+      "handleDate": "",
+      "processingAt": "",
+      "resolvedAt": "",
+      "autoResolved": false,
+      "handleHistory": [],
+      "createdAt": "2026-06-14T11:18:16.460Z"
+    }
+  ],
   "warningThresholds": {
     "temperature": {
       "yellowMin": 20,
