@@ -7,9 +7,13 @@ function validateCustomer(input, isUpdate = false) {
     } else if (!/^[A-Za-z0-9\-_]+$/.test(input.id.trim())) {
       errors.push("客户编号只能包含字母、数字、连字符和下划线");
     }
+
+    if (!input.name || typeof input.name !== "string" || !input.name.trim()) {
+      errors.push("客户名称不能为空");
+    }
   }
 
-  if (input.name !== undefined && (!input.name || typeof input.name !== "string" || !input.name.trim())) {
+  if (isUpdate && input.name !== undefined && (!input.name || typeof input.name !== "string" || !input.name.trim())) {
     errors.push("客户名称不能为空");
   }
 
