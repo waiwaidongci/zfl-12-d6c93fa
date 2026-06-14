@@ -1,4 +1,4 @@
-const ROLLBACK_BLACKLIST = new Set(["farm_create", "farm_update", "farm_delete", "farm_set_default", "threshold_update"]);
+const ROLLBACK_BLACKLIST = new Set(["farm_create", "farm_update", "farm_delete", "farm_set_default", "threshold_update", "rollback"]);
 const ROLLBACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function summarize(obj) {
@@ -103,6 +103,13 @@ function rollbackCreate(db, targetType, after, logEntry) {
     db.transfers = db.transfers.filter((t) => !(t.batchId === createdItem.id && t.reason === "新批次入池"));
   }
 
+  if (targetType === "inventory" && logEntry.meta && logEntry.meta.batchId) {
+    const batch = (db.batches || []).find((b) => b.id === logEntry.meta.batchId);
+    if (batch && logEntry.meta.previousEstimatedCount != null) {
+      batch.estimatedCount = logEntry.meta.previousEstimatedCount;
+    }
+  }
+
   logEntry.rolledBack = true;
   return { success: true, message: `已撤销创建 ${targetType}(${createdItem.id})` };
 }
@@ -121,7 +128,12 @@ function rollbackDelete(db, targetType, before, logEntry) {
     return { success: false, error: "同ID记录已存在，无法恢复" };
   }
 
-  arr.push(deletedItem);
+  const originalIndex = deletedItem._originalIndex;
+  if (originalIndex != null && originalIndex >= 0 && originalIndex <= arr.length) {
+    arr.splice(originalIndex, 0, deletedItem);
+  } else {
+    arr.push(deletedItem);
+  }
 
   if (targetType === "inventory" && deletedItem.batchId) {
     const batch = (db.batches || []).find((b) => b.id === deletedItem.batchId);
@@ -174,7 +186,9 @@ export function getLatestRollbackable(db, farmId) {
   const logs = farmId ? db.opLogs.filter((l) => l.farmId === farmId) : db.opLogs;
   for (let i = logs.length - 1; i >= 0; i--) {
     const check = canRollback(logs[i]);
-    if (check.ok) return logs[i];
+    if (check.ok) {
+      return logs[i];
+    }
   }
   return null;
 }

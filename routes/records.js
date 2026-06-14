@@ -146,6 +146,7 @@ export function createRecordsRouter(helpers) {
         if (farmId && existing.farmId !== farmId) {
           return sendJson(res, 404, { error: "记录不存在" });
         }
+        existing._originalIndex = recordIndex;
         const removedCount = removeWarningsForRecord(recordId, db);
         db.records.splice(recordIndex, 1);
         writeLog(db, {

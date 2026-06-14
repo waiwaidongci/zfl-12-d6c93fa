@@ -290,6 +290,7 @@ export function createOrdersRouter(helpers) {
           });
         }
 
+        order._originalIndex = orderIndex;
         const [deleted] = orders.splice(orderIndex, 1);
         db.orders = orders;
         writeLog(db, {

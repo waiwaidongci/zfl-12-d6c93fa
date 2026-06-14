@@ -193,6 +193,7 @@ export function createCostsRouter(helpers) {
         return sendJson(res, 404, { error: "成本项目不存在" });
       }
 
+      existing._originalIndex = index;
       costItems.splice(index, 1);
       db.costItems = costItems;
       writeLog(db, {

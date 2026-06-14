@@ -159,15 +159,16 @@ export function createPondsRouter(helpers) {
             message: "该池子已被批次/记录/流转引用，无法删除",
           });
         }
+        existing._originalIndex = pondIndex;
         const [deleted] = db.ponds.splice(pondIndex, 1);
         writeLog(db, {
           operator: "",
           action: "pond_delete",
           targetType: "pond",
-          targetId: deleted.id,
-          before: deleted,
+          targetId: existing.id,
+          before: existing,
           after: null,
-          farmId: deleted.farmId,
+          farmId: existing.farmId,
         });
         await saveDb(db);
         return sendJson(res, 200, deleted);

@@ -160,6 +160,7 @@ export function createWarningsRouter(helpers) {
       if (farmId && existing.farmId !== farmId) {
         return sendJson(res, 404, { error: "预警不存在" });
       }
+      existing._originalIndex = idx;
       db.warnings.splice(idx, 1);
       writeLog(db, {
         operator: "",

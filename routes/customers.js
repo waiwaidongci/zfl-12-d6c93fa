@@ -227,6 +227,8 @@ export function createCustomersRouter(helpers) {
             message: "该客户已有销售记录关联，无法删除",
           });
         }
+        const existing = customers[customerIndex];
+        existing._originalIndex = customerIndex;
         const [deleted] = customers.splice(customerIndex, 1);
         db.customers = customers;
         writeLog(db, {
@@ -234,7 +236,7 @@ export function createCustomersRouter(helpers) {
           action: "customer_delete",
           targetType: "customer",
           targetId: customerId,
-          before: deleted,
+          before: existing,
           after: null,
           farmId: "",
         });

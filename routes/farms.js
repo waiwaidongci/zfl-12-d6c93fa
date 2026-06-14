@@ -206,6 +206,8 @@ export function createFarmsRouter(helpers) {
           }
         }
 
+        const existing = farms[farmIndex];
+        existing._originalIndex = farmIndex;
         const [deleted] = farms.splice(farmIndex, 1);
         db.farms = farms;
         writeLog(db, {
@@ -213,7 +215,7 @@ export function createFarmsRouter(helpers) {
           action: "farm_delete",
           targetType: "farm",
           targetId: farmId,
-          before: deleted,
+          before: existing,
           after: null,
           farmId: farmId,
         });

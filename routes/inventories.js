@@ -136,6 +136,7 @@ export function createInventoriesRouter(helpers) {
         if (farmId && existing.farmId !== farmId) {
           return sendJson(res, 404, { error: "盘点记录不存在" });
         }
+        existing._originalIndex = inventoryIndex;
         const removed = existing;
         db.inventories.splice(inventoryIndex, 1);
 

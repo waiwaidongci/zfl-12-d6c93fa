@@ -239,6 +239,7 @@ export function createShipmentsRouter(helpers) {
         if (farmId && shipment.farmId !== farmId) {
           return sendJson(res, 404, { error: "shipment_not_found" });
         }
+        shipment._originalIndex = shipmentIndex;
         const [deleted] = shipments.splice(shipmentIndex, 1);
         db.shipments = shipments;
         writeLog(db, {
