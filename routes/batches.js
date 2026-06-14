@@ -1,3 +1,6 @@
+import { enrichOrder } from "./orders.js";
+import { enrichShipment, getBatchAvailableQuantity } from "./shipments.js";
+
 function sum(items, key) {
   return Number(
     items.reduce((total, item) => total + Number(item[key] || 0), 0).toFixed(2)
@@ -34,6 +37,14 @@ export function batchTrace(db, batchId) {
     .filter((item) => item.batchId === batchId)
     .map((s) => enrichSale(s, db))
     .sort((a, b) => a.date.localeCompare(b.date));
+  const orders = (db.orders || [])
+    .filter((item) => item.batchId === batchId)
+    .map((o) => enrichOrder(o, db))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const shipments = (db.shipments || [])
+    .filter((item) => item.batchId === batchId)
+    .map((s) => enrichShipment(s, db))
+    .sort((a, b) => a.date.localeCompare(b.date));
   const costItems = (db.costItems || [])
     .filter((item) => item.batchId === batchId)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -50,8 +61,17 @@ export function batchTrace(db, batchId) {
   const estimatedCount = Number(batch.estimatedCount || 0);
   const unitCost = estimatedCount > 0 ? Number((totalCost / estimatedCount).toFixed(6)) : 0;
 
-  const soldCount = sum(sales, "count");
-  const salesRevenue = sales.reduce((total, s) => total + Number(s.count || 0) * Number(s.unitPrice || 0), 0);
+  const oldSoldCount = sum(sales, "count");
+  const oldSalesRevenue = sales.reduce((total, s) => total + Number(s.count || 0) * Number(s.unitPrice || 0), 0);
+
+  const shippedCount = sum(shipments, "quantity");
+  const shipmentRevenue = shipments.reduce((total, s) => {
+    const unitPrice = s.orderInfo?.unitPrice || 0;
+    return total + Number(s.quantity || 0) * Number(unitPrice || 0);
+  }, 0);
+
+  const soldCount = oldSoldCount + shippedCount;
+  const salesRevenue = oldSalesRevenue + shipmentRevenue;
   const soldCost = soldCount * unitCost;
   const grossProfit = salesRevenue - soldCost;
   const grossMargin = salesRevenue > 0 ? Number(((grossProfit / salesRevenue) * 100).toFixed(2)) : 0;
@@ -66,11 +86,31 @@ export function batchTrace(db, batchId) {
     totalDifference: 0,
   };
 
+  const orderStats = {
+    totalOrders: orders.length,
+    pendingOrders: orders.filter((o) => o.status === "pending").length,
+    partialOrders: orders.filter((o) => o.status === "partial").length,
+    completedOrders: orders.filter((o) => o.status === "completed").length,
+    cancelledOrders: orders.filter((o) => o.status === "cancelled").length,
+    totalOrderQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "orderQuantity"),
+    totalShippedQuantity: shippedCount,
+    totalRemainingQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "remainingQuantity"),
+    totalOrderAmount: Number(
+      orders
+        .filter((o) => o.status !== "cancelled")
+        .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0)
+        .toFixed(2)
+    ),
+    availableQuantity: getBatchAvailableQuantity(batch, db),
+  };
+
   return {
     batch,
     records,
     transfers,
     sales,
+    orders,
+    shipments,
     costItems,
     warnings,
     inventories,
@@ -91,6 +131,15 @@ export function batchTrace(db, batchId) {
       grossProfit: Number(grossProfit.toFixed(2)),
       grossMargin,
       inventoryStats,
+      orderStats,
+      oldSales: {
+        count: oldSoldCount,
+        revenue: Number(oldSalesRevenue.toFixed(2)),
+      },
+      newSales: {
+        shippedCount,
+        revenue: Number(shipmentRevenue.toFixed(2)),
+      },
     },
   };
 }

@@ -174,6 +174,9 @@ export const seedData = {
       note: "蟹苗主要客户",
     },
   ],
+  sales: [],
+  orders: [],
+  shipments: [],
   warnings: [],
   warningThresholds: {
     temperature: { yellowMin: 20, yellowMax: 32, redMin: 18, redMax: 35 },

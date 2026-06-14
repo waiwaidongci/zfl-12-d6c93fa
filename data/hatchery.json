@@ -14,7 +14,7 @@
       "parentPoolId": "PP-01",
       "hatchDate": "2026-06-01",
       "currentPool": "P-03",
-      "estimatedCount": 815000,
+      "estimatedCount": 850000,
       "status": "育苗中",
       "cost": 12600
     }
@@ -179,6 +179,8 @@
       "note": "蟹苗主要客户"
     }
   ],
+  "orders": [],
+  "shipments": [],
   "warnings": [],
   "warningThresholds": {
     "temperature": {
@@ -214,21 +216,5 @@
       "沉底"
     ]
   },
-  "inventories": [
-    {
-      "id": "INV-1781411487638",
-      "batchId": "B-260601",
-      "date": "2026-06-14",
-      "poolId": "P-03",
-      "method": "sampling",
-      "manualEstimate": 820000,
-      "actualCount": 815000,
-      "systemEstimate": 850000,
-      "beforeCount": 850000,
-      "afterCount": 815000,
-      "difference": -35000,
-      "operator": "李场长",
-      "note": "因前期死亡率偏高，实际数量低于系统估算"
-    }
-  ]
+  "inventories": []
 }

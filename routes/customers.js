@@ -44,39 +44,113 @@ function sanitizeCustomer(input, existing = null) {
   };
 }
 
-function buildCustomerSummary(customer, sales, batches) {
+function buildCustomerSummary(customer, sales, batches, orders = [], shipments = []) {
   const customerSales = sales.filter((s) => s.customerId === customer.id || s.customer === customer.name);
-  const totalCount = customerSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
-  const totalAmount = customerSales.reduce(
+  const customerOrders = orders.filter(
+    (o) => o.customerId === customer.id || o.customerName === customer.name
+  );
+  const customerShipments = shipments.filter((s) => {
+    const order = orders.find((o) => o.id === s.orderId);
+    if (!order) return false;
+    return order.customerId === customer.id || order.customerName === customer.name;
+  });
+
+  const oldSalesCount = customerSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
+  const oldSalesAmount = customerSales.reduce(
     (sum, s) => sum + Number(s.count || 0) * Number(s.unitPrice || 0),
     0
   );
-  const batchIds = [...new Set(customerSales.map((s) => s.batchId))];
+
+  const shipmentCount = customerShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+  const shipmentAmount = customerShipments.reduce((sum, s) => {
+    const order = orders.find((o) => o.id === s.orderId);
+    const unitPrice = order?.unitPrice || 0;
+    return sum + Number(s.quantity || 0) * Number(unitPrice || 0);
+  }, 0);
+
+  const totalCount = oldSalesCount + shipmentCount;
+  const totalAmount = oldSalesAmount + shipmentAmount;
+
+  const batchIdsFromSales = customerSales.map((s) => s.batchId);
+  const batchIdsFromOrders = customerOrders.map((o) => o.batchId);
+  const batchIdsFromShipments = customerShipments.map((s) => s.batchId);
+  const batchIds = [...new Set([...batchIdsFromSales, ...batchIdsFromOrders, ...batchIdsFromShipments])];
+
   const batchSummaries = batchIds.map((batchId) => {
     const batch = batches.find((b) => b.id === batchId);
     const batchSales = customerSales.filter((s) => s.batchId === batchId);
-    const batchCount = batchSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
-    const batchAmount = batchSales.reduce(
+    const batchSalesCount = batchSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
+    const batchSalesAmount = batchSales.reduce(
       (sum, s) => sum + Number(s.count || 0) * Number(s.unitPrice || 0),
       0
     );
-    const lastDate = batchSales.map((s) => s.date).sort().reverse()[0] || "";
+
+    const batchOrders = customerOrders.filter((o) => o.batchId === batchId);
+    const batchOrderQty = batchOrders
+      .filter((o) => o.status !== "cancelled")
+      .reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
+
+    const batchShipments = customerShipments.filter((s) => s.batchId === batchId);
+    const batchShipmentCount = batchShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    const batchShipmentAmount = batchShipments.reduce((sum, s) => {
+      const order = orders.find((o) => o.id === s.orderId);
+      const unitPrice = order?.unitPrice || 0;
+      return sum + Number(s.quantity || 0) * Number(unitPrice || 0);
+    }, 0);
+
+    const batchCount = batchSalesCount + batchShipmentCount;
+    const batchAmount = batchSalesAmount + batchShipmentAmount;
+
+    const salesDates = batchSales.map((s) => s.date);
+    const shipmentDates = batchShipments.map((s) => s.date);
+    const orderDates = batchOrders.map((o) => o.deliveryDate).filter(Boolean);
+    const allDates = [...salesDates, ...shipmentDates, ...orderDates];
+    const lastDate = allDates.sort().reverse()[0] || "";
+
     return {
       batchId,
       species: batch?.species || "",
       count: batchCount,
       amount: Math.round(batchAmount),
       lastDate,
+      orderCount: batchOrders.length,
+      orderQuantity: batchOrderQty,
+      shipmentCount: batchShipments.length,
+      shipmentQuantity: batchShipmentCount,
+      oldSalesCount: batchSalesCount,
     };
   }).sort((a, b) => b.lastDate.localeCompare(a.lastDate));
+
+  const validOrders = customerOrders.filter((o) => o.status !== "cancelled");
+  const totalOrderQty = validOrders.reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
+  const totalOrderAmount = validOrders.reduce(
+    (sum, o) => sum + Number(o.orderQuantity || 0) * Number(o.unitPrice || 0),
+    0
+  );
 
   return {
     ...customer,
     purchaseSummary: {
-      orderCount: customerSales.length,
+      orderCount: customerSales.length + customerOrders.length,
       totalCount,
       totalAmount: Math.round(totalAmount),
       batches: batchSummaries,
+      orderStats: {
+        totalOrders: customerOrders.length,
+        pendingOrders: customerOrders.filter((o) => o.status === "pending").length,
+        partialOrders: customerOrders.filter((o) => o.status === "partial").length,
+        completedOrders: customerOrders.filter((o) => o.status === "completed").length,
+        cancelledOrders: customerOrders.filter((o) => o.status === "cancelled").length,
+        totalOrderQuantity: totalOrderQty,
+        totalOrderAmount: Math.round(totalOrderAmount),
+        totalShippedQuantity: shipmentCount,
+        totalShippedAmount: Math.round(shipmentAmount),
+        totalRemainingQuantity: totalOrderQty - shipmentCount,
+      },
+      oldSales: {
+        count: oldSalesCount,
+        amount: Math.round(oldSalesAmount),
+      },
     },
   };
 }
@@ -88,7 +162,7 @@ export function createCustomersRouter(helpers) {
     if (method === "GET" && pathname === "/api/customers") {
       const db = await loadDb();
       const customers = (db.customers || []).map((c) =>
-        buildCustomerSummary(c, db.sales || [], db.batches || [])
+        buildCustomerSummary(c, db.sales || [], db.batches || [], db.orders || [], db.shipments || [])
       );
       return sendJson(res, 200, customers);
     }
@@ -107,7 +181,9 @@ export function createCustomersRouter(helpers) {
         const customer = buildCustomerSummary(
           customers[customerIndex],
           db.sales || [],
-          db.batches || []
+          db.batches || [],
+          db.orders || [],
+          db.shipments || []
         );
         return sendJson(res, 200, customer);
       }

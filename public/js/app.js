@@ -25,6 +25,13 @@ const INVENTORY_METHODS = {
   full: { label: "实际盘点" },
 };
 
+const ORDER_STATUSES = {
+  pending: { label: "待发货", class: "status-idle" },
+  partial: { label: "部分发货", class: "status-cleaning" },
+  completed: { label: "已完成", class: "status-active" },
+  cancelled: { label: "已取消", class: "status-maintenance" },
+};
+
 const forms = {
   record:
     '<h2>每日水质和投喂</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>池号</label><select name="poolId"></select><label>水温</label><input name="temperature" type="number" step="0.1" required><label>盐度</label><input name="salinity" type="number" step="0.1" required><label>溶氧</label><input name="oxygen" type="number" step="0.1" required><label>投喂量kg</label><input name="feed" type="number" step="0.1" required><label>死亡率%</label><input name="mortality" type="number" step="0.1" required><label>异常情况</label><textarea name="abnormal"></textarea><button>保存记录</button>',
@@ -44,6 +51,10 @@ const forms = {
     '<h2>客户档案</h2><div class="customer-toolbar"><input id="customerSearch" placeholder="搜索客户名称、联系人或地区..."><div class="spacer"></div><button type="button" id="addCustomerBtn">+ 新增客户</button></div><div class="customer-stats" id="customerStats"></div><div class="grid" id="customerList"></div>',
   warning:
     '<h2>水质预警中心</h2><div class="warning-toolbar"><select id="warningLevelFilter"><option value="">全部等级</option><option value="red">红色预警</option><option value="yellow">黄色预警</option></select><select id="warningStatusFilter"><option value="">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select><select id="warningBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" class="secondary" id="thresholdConfigBtn">阈值配置</button></div><div class="warning-stats" id="warningStats"></div><div class="grid" id="warningList"></div>',
+  order:
+    '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><div class="spacer"></div><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
+  shipment:
+    '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
 };
 
 let db = {};
@@ -134,6 +145,10 @@ async function renderTrace() {
   const invStats = s.inventoryStats || {};
   const diffClass = invStats.totalDifference >= 0 ? "" : "warning";
 
+  const orderStats = s.orderStats || {};
+  const oldSales = s.oldSales || { count: 0, revenue: 0 };
+  const newSales = s.newSales || { shippedCount: 0, revenue: 0 };
+
   statsEl.innerHTML = `
     <div class="stat"><span>均温</span><strong>${s.averageTemperature}℃</strong></div>
     <div class="stat"><span>均溶氧</span><strong>${s.averageOxygen}</strong></div>
@@ -143,8 +158,19 @@ async function renderTrace() {
     <div class="stat"><span>总成本</span><strong>${s.totalCost.toFixed(2)} 元</strong></div>
     <div class="stat"><span>估算数量</span><strong>${s.estimatedCount.toLocaleString()} 尾</strong></div>
     <div class="stat"><span>单位苗成本</span><strong>${s.unitCost.toFixed(6)} 元/尾</strong></div>
-    <div class="stat"><span>已售出</span><strong>${s.soldCount.toLocaleString()} 尾</strong></div>
-    <div class="stat"><span>销售收入</span><strong>${s.salesRevenue.toFixed(2)} 元</strong></div>
+    <div class="stat"><span>可售数量</span><strong>${(orderStats.availableQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>订单总数</span><strong>${orderStats.totalOrders || 0} 单</strong></div>
+    <div class="stat"><span>待发货</span><strong>${orderStats.pendingOrders || 0} 单</strong></div>
+    <div class="stat"><span>部分发货</span><strong>${orderStats.partialOrders || 0} 单</strong></div>
+    <div class="stat"><span>已完成</span><strong>${orderStats.completedOrders || 0} 单</strong></div>
+    <div class="stat"><span>订单总量</span><strong>${(orderStats.totalOrderQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>订单金额</span><strong>${(orderStats.totalOrderAmount || 0).toFixed(2)} 元</strong></div>
+    <div class="stat"><span>已发货</span><strong>${(orderStats.totalShippedQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>待发货量</span><strong>${(orderStats.totalRemainingQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>旧模式销售</span><strong>${oldSales.count.toLocaleString()} 尾 / ¥${oldSales.revenue.toFixed(2)}</strong></div>
+    <div class="stat"><span>新模式发货</span><strong>${newSales.shippedCount.toLocaleString()} 尾 / ¥${newSales.revenue.toFixed(2)}</strong></div>
+    <div class="stat"><span>总计已售</span><strong>${s.soldCount.toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>总销售收入</span><strong>${s.salesRevenue.toFixed(2)} 元</strong></div>
     <div class="stat"><span>售出成本</span><strong>${s.soldCost.toFixed(2)} 元</strong></div>
     <div class="stat"><span>销售毛利</span><strong class="${profitClass}">${s.grossProfit.toFixed(2)} 元</strong></div>
     <div class="stat"><span>毛利率</span><strong class="${profitClass}">${s.grossMargin.toFixed(2)}%</strong></div>
@@ -181,6 +207,32 @@ async function renderTrace() {
       title: "成本支出",
       detail: `[${e.category}] ${e.description || ""}，金额 ${e.amount.toFixed(2)} 元${e.quantity ? `，数量 ${e.quantity}${e.unit || ""}` : ""}`,
     })),
+    ...(trace.orders || []).map((e) => {
+      const customerName = e.customerInfo?.name || e.customerName || "未知客户";
+      const statusLabel = ORDER_STATUSES[e.status]?.label || e.status;
+      return {
+        date: e.createdAt.split("T")[0],
+        title: "销售订单",
+        detail: `${customerName} 订购 ${e.orderQuantity.toLocaleString()} 尾，单价 ${Number(e.unitPrice).toFixed(4)} 元/尾，金额 ¥${e.totalAmount.toFixed(2)}，交付日期 ${e.deliveryDate || "-"}，状态：${statusLabel}`,
+        orderId: e.id,
+        orderStatus: e.status,
+        orderQuantity: e.orderQuantity,
+        orderShipped: e.shippedQuantity,
+        orderRemaining: e.remainingQuantity,
+      };
+    }),
+    ...(trace.shipments || []).map((e) => {
+      const customerName = e.customerInfo?.name || e.customerName || "未知客户";
+      return {
+        date: e.date,
+        title: "批次发货",
+        detail: `${customerName}，订单 ${e.orderId}，发货 ${e.quantity.toLocaleString()} 尾，收入 ¥${e.amount.toFixed(2)}`,
+        shipmentId: e.id,
+        shipmentOrderId: e.orderId,
+        shipmentQuantity: e.quantity,
+        shipmentAmount: e.amount,
+      };
+    }),
     ...trace.sales.map((e) => {
       let customerText = e.customer;
       if (e.customerInfo) {
@@ -192,8 +244,9 @@ async function renderTrace() {
       const revenue = Number(e.count || 0) * Number(e.unitPrice || 0);
       return {
         date: e.date,
-        title: "出苗销售",
+        title: "出苗销售（旧）",
         detail: customerText + "，" + e.count + "尾，收入" + revenue.toFixed(2) + "元，单价" + Number(e.unitPrice).toFixed(4) + "元/尾",
+        isOldSale: true,
       };
     }),
     ...(trace.warnings || []).map((e) => ({
@@ -274,6 +327,35 @@ async function renderTrace() {
               </div>
             </div>`;
         }
+        if (e.orderId) {
+          const statusInfo = ORDER_STATUSES[e.orderStatus] || { label: e.orderStatus, class: "" };
+          const progress = e.orderQuantity > 0 ? Math.round((e.orderShipped / e.orderQuantity) * 100) : 0;
+          return `
+            <div class="event event-order" data-order-id="${e.orderId}" style="cursor:pointer;">
+              <div class="event-order-header">
+                <b>${e.date} · ${e.title}</b>
+                <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
+              </div>
+              <div class="meta">${e.detail}</div>
+              <div class="order-progress" style="margin-top:8px;">
+                <div class="order-progress-bar" style="width:${progress}%;"></div>
+              </div>
+              <div class="meta" style="font-size:11px;margin-top:4px;">已发 ${e.orderShipped.toLocaleString()} / ${e.orderQuantity.toLocaleString()} 尾（${progress}%），剩余 ${e.orderRemaining.toLocaleString()} 尾</div>
+            </div>`;
+        }
+        if (e.shipmentId) {
+          return `
+            <div class="event event-shipment" data-shipment-id="${e.shipmentId}" style="cursor:pointer;">
+              <div class="event-shipment-header">
+                <b>${e.date} · ${e.title}</b>
+                <span class="status-badge status-active">✓ 已发货</span>
+              </div>
+              <div class="meta">${e.detail}</div>
+            </div>`;
+        }
+        if (e.isOldSale) {
+          return `<div class="event event-old-sale"><b>${e.date} · ${e.title}</b><div class="meta" style="color:#999;">${e.detail}</div></div>`;
+        }
         return `<div class="event"><b>${e.date} · ${e.title}</b><div class="meta ${e.detail.includes("偏低") ? "warning" : ""}">${e.detail}</div></div>`;
       }
     )
@@ -299,6 +381,38 @@ async function renderTrace() {
       document.querySelector('[data-tab="warning"]').click();
       setTimeout(() => {
         const card = document.querySelector(`.warning-card[data-id="${warnId}"]`);
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" });
+          card.style.boxShadow = "0 0 0 3px #f0c9a0, 0 4px 14px rgba(0,0,0,0.08)";
+          setTimeout(() => { card.style.boxShadow = ""; }, 2500);
+        }
+      }, 200);
+    };
+  });
+
+  timelineEl.querySelectorAll(".event-order").forEach((evt) => {
+    const orderId = evt.dataset.orderId;
+    if (!orderId) return;
+    evt.onclick = () => {
+      document.querySelector('[data-tab="order"]').click();
+      setTimeout(() => {
+        const card = document.querySelector(`.order-card[data-id="${orderId}"]`);
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" });
+          card.style.boxShadow = "0 0 0 3px #f0c9a0, 0 4px 14px rgba(0,0,0,0.08)";
+          setTimeout(() => { card.style.boxShadow = ""; }, 2500);
+        }
+      }, 200);
+    };
+  });
+
+  timelineEl.querySelectorAll(".event-shipment").forEach((evt) => {
+    const shipmentId = evt.dataset.shipmentId;
+    if (!shipmentId) return;
+    evt.onclick = () => {
+      document.querySelector('[data-tab="shipment"]').click();
+      setTimeout(() => {
+        const card = document.querySelector(`.shipment-card[data-id="${shipmentId}"]`);
         if (card) {
           card.scrollIntoView({ behavior: "smooth", block: "center" });
           card.style.boxShadow = "0 0 0 3px #f0c9a0, 0 4px 14px rgba(0,0,0,0.08)";
@@ -1524,6 +1638,472 @@ function bindWarningEvents() {
   if (thresholdBtn) thresholdBtn.onclick = (e) => { e.preventDefault(); openThresholdConfigModal(); };
 }
 
+function renderOrderStats() {
+  const orders = db.orders || [];
+  const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
+  const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
+  let filtered = orders;
+  if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
+  if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
+
+  const total = filtered.length;
+  const pending = filtered.filter((o) => o.status === "pending").length;
+  const partial = filtered.filter((o) => o.status === "partial").length;
+  const completed = filtered.filter((o) => o.status === "completed").length;
+  const cancelled = filtered.filter((o) => o.status === "cancelled").length;
+  const totalQty = filtered
+    .filter((o) => o.status !== "cancelled")
+    .reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
+  const totalAmount = filtered
+    .filter((o) => o.status !== "cancelled")
+    .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+
+  const stats = [
+    ["订单总数", total + " 单"],
+    ["待发货", pending + " 单"],
+    ["部分发货", partial + " 单"],
+    ["已完成", completed + " 单"],
+    ["已取消", cancelled + " 单"],
+    ["订购总量", totalQty.toLocaleString() + " 尾"],
+    ["订单总额", totalAmount.toFixed(2) + " 元"],
+  ];
+
+  document.getElementById("orderStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
+    .join("");
+}
+
+function renderOrderList() {
+  const orders = db.orders || [];
+  const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
+  const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
+  let filtered = orders;
+  if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
+  if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
+  filtered = [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const list = document.getElementById("orderList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无订单数据，点击右上角「新增订单」添加</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered
+    .map((o) => {
+      const statusInfo = ORDER_STATUSES[o.status] || { label: o.status, class: "" };
+      const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+      const batch = db.batches?.find((b) => b.id === o.batchId);
+      const species = batch?.species || "";
+      return `
+    <div class="order-card" data-id="${o.id}">
+      <div class="order-header">
+        <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
+        <span class="order-batch">${o.batchId}${species ? " · " + species : ""}</span>
+      </div>
+      <div class="order-id">${o.id}</div>
+      <div class="order-customer"><strong>${customerName}</strong></div>
+      ${o.customerInfo?.phone ? `<div class="order-contact">${o.customerInfo.contact || ""} · ${o.customerInfo.phone}</div>` : ""}
+      <div class="order-info" style="margin-top:10px;">
+        <div class="row"><span class="label">订购数量</span><span>${o.orderQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">已发货</span><span>${o.shippedQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">剩余</span><span class="${o.remainingQuantity > 0 ? "" : "meta"}">${o.remainingQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">单价</span><span>${Number(o.unitPrice).toFixed(4)} 元/尾</span></div>
+        <div class="row"><span class="label">订单金额</span><strong>¥${o.totalAmount.toFixed(2)}</strong></div>
+        <div class="row"><span class="label">已发金额</span><span>¥${o.shippedAmount.toFixed(2)}</span></div>
+        <div class="row"><span class="label">交付日期</span><span>${o.deliveryDate || "-"}</span></div>
+        <div class="row"><span class="label">创建时间</span><span>${new Date(o.createdAt).toLocaleString("zh-CN")}</span></div>
+      </div>
+      ${o.note ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${o.note}</div>` : ""}
+      ${o.shipmentCount > 0 ? `<div class="meta" style="margin-top:8px;font-size:12px;color:var(--blue);">已发货 ${o.shipmentCount} 次</div>` : ""}
+      <div class="order-actions">
+        ${o.status !== "cancelled" && o.status !== "completed" ? `<button type="button" data-action="ship">发货</button>` : ""}
+        ${o.status !== "cancelled" && o.shipmentCount === 0 ? `<button type="button" class="secondary" data-action="edit">编辑</button>` : ""}
+        ${o.status !== "cancelled" && o.shipmentCount === 0 ? `<button type="button" class="danger" data-action="cancel">取消</button>` : ""}
+        ${o.shipmentCount === 0 ? `<button type="button" class="danger" data-action="delete">删除</button>` : ""}
+      </div>
+    </div>
+  `;
+    })
+    .join("");
+
+  list.querySelectorAll(".order-card").forEach((card) => {
+    const id = card.dataset.id;
+    const shipBtn = card.querySelector('[data-action="ship"]');
+    const editBtn = card.querySelector('[data-action="edit"]');
+    const cancelBtn = card.querySelector('[data-action="cancel"]');
+    const deleteBtn = card.querySelector('[data-action="delete"]');
+    if (shipBtn) shipBtn.onclick = (e) => { e.preventDefault(); openShipmentModal(null, id); };
+    if (editBtn) editBtn.onclick = (e) => { e.preventDefault(); openOrderModal(id); };
+    if (cancelBtn) cancelBtn.onclick = (e) => { e.preventDefault(); cancelOrder(id); };
+    if (deleteBtn) deleteBtn.onclick = (e) => { e.preventDefault(); deleteOrder(id); };
+  });
+}
+
+function renderOrders() {
+  const batchFilter = document.getElementById("orderBatchFilter");
+  if (batchFilter && db.batches) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    batchFilter.value = currentVal;
+  }
+  renderOrderStats();
+  renderOrderList();
+}
+
+function openOrderModal(orderId = null, prefillBatchId = null) {
+  const orders = db.orders || [];
+  const order = orderId ? orders.find((o) => o.id === orderId) : null;
+  const isEdit = !!order;
+  const batches = db.batches || [];
+  const customers = db.customers || [];
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${isEdit ? "编辑订单" : "新增订单"}</h2>
+      <form id="orderForm">
+        <label>批次</label>
+        <select name="batchId" id="orderBatchSelect" required>
+          ${batches
+            .map(
+              (b) =>
+                `<option value="${b.id}" ${(order?.batchId || prefillBatchId) === b.id ? "selected" : ""}>${b.id} · ${b.species} · 可售 ${b.estimatedCount.toLocaleString()} 尾</option>`
+            )
+            .join("")}
+        </select>
+        <label>客户</label>
+        <div class="order-customer-row">
+          <select name="customerId" id="orderCustomerSelect">
+            <option value="">请选择客户（选填）</option>
+            ${customers
+              .map(
+                (c) =>
+                  `<option value="${c.id}" ${order?.customerId === c.id ? "selected" : ""}>${c.name} (${c.contact || "-"} · ${c.phone || "-"})</option>`
+              )
+              .join("")}
+          </select>
+          <button type="button" class="secondary" id="orderQuickAddCustomerBtn">+ 新客户</button>
+        </div>
+        <div id="orderCustomerNameWrap">
+          <label>或直接输入客户名称</label>
+          <input name="customerName" id="orderCustomerName" placeholder="手动输入客户名称" value="${order?.customerName || ""}">
+        </div>
+        <label>订购数量（尾）</label>
+        <input name="orderQuantity" type="number" min="1" required value="${order?.orderQuantity || ""}" placeholder="输入订购数量">
+        <label>单价（元/尾）</label>
+        <input name="unitPrice" type="number" step="0.0001" min="0" required value="${order?.unitPrice || ""}" placeholder="如 0.05">
+        <label>交付日期</label>
+        <input name="deliveryDate" type="date" required value="${order?.deliveryDate || ""}">
+        <label>备注（选填）</label>
+        <textarea name="note" placeholder="订单备注信息">${order?.note || ""}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">${isEdit ? "保存修改" : "创建订单"}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const updateCustomerInputVisibility = () => {
+    const customerSelect = modal.querySelector("#orderCustomerSelect");
+    const nameWrap = modal.querySelector("#orderCustomerNameWrap");
+    const nameInput = modal.querySelector("#orderCustomerName");
+    if (customerSelect && customerSelect.value) {
+      nameWrap.classList.add("hidden");
+      if (nameInput) nameInput.value = "";
+    } else {
+      nameWrap.classList.remove("hidden");
+    }
+  };
+
+  modal.querySelector("#orderCustomerSelect").onchange = updateCustomerInputVisibility;
+  updateCustomerInputVisibility();
+
+  modal.querySelector("#orderQuickAddCustomerBtn").onclick = (e) => {
+    e.preventDefault();
+    openCustomerModal(null, true);
+  };
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+  modal.querySelector("#orderForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    if (!data.customerId && !data.customerName) {
+      alert("请选择客户或输入客户名称");
+      return;
+    }
+    if (!data.customerName) delete data.customerName;
+    if (!data.customerId) delete data.customerId;
+    try {
+      if (isEdit) {
+        await api("/api/orders/" + orderId, { method: "PUT", body: JSON.stringify(data) });
+      } else {
+        await api("/api/orders", { method: "POST", body: JSON.stringify(data) });
+      }
+      modal.remove();
+      await load();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+async function cancelOrder(orderId) {
+  const order = (db.orders || []).find((o) => o.id === orderId);
+  if (!order) return;
+  if (!confirm("确定要取消订单「" + order.id + "」吗？")) return;
+  try {
+    await api("/api/orders/" + orderId, {
+      method: "PUT",
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteOrder(orderId) {
+  const order = (db.orders || []).find((o) => o.id === orderId);
+  if (!order) return;
+  if (!confirm("确定要删除订单「" + order.id + "」吗？删除后不可恢复。")) return;
+  try {
+    await api("/api/orders/" + orderId, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function bindOrderEvents() {
+  const addBtn = document.getElementById("addOrderBtn");
+  const batchFilter = document.getElementById("orderBatchFilter");
+  const statusFilter = document.getElementById("orderStatusFilter");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openOrderModal(null, batchSelect.value); };
+  if (batchFilter) batchFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
+  if (statusFilter) statusFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
+}
+
+function renderShipmentStats() {
+  const shipments = db.shipments || [];
+  const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
+  let filtered = shipments;
+  if (batchFilter) filtered = filtered.filter((s) => s.batchId === batchFilter);
+
+  const total = filtered.length;
+  const totalQty = filtered.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+  const totalAmount = filtered.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+
+  const stats = [
+    ["发货记录", total + " 次"],
+    ["发货总量", totalQty.toLocaleString() + " 尾"],
+    ["发货总额", totalAmount.toFixed(2) + " 元"],
+  ];
+
+  document.getElementById("shipmentStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
+    .join("");
+}
+
+function renderShipmentList() {
+  const shipments = db.shipments || [];
+  const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
+  const orderFilter = document.getElementById("shipmentStatusFilter")?.value || "";
+  let filtered = shipments;
+  if (batchFilter) filtered = filtered.filter((s) => s.batchId === batchFilter);
+  if (orderFilter) filtered = filtered.filter((s) => s.orderId === orderFilter);
+  filtered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+
+  const list = document.getElementById("shipmentList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无发货记录，点击右上角「新增发货」添加</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered
+    .map((s) => {
+      const customerName = s.customerInfo?.name || s.customerName || "未知客户";
+      const batch = db.batches?.find((b) => b.id === s.batchId);
+      const species = batch?.species || "";
+      const order = s.orderInfo;
+      return `
+    <div class="shipment-card" data-id="${s.id}">
+      <div class="shipment-header">
+        <span class="shipment-batch">${s.batchId}${species ? " · " + species : ""}</span>
+        <span class="shipment-amount">¥${s.amount.toFixed(2)}</span>
+      </div>
+      <div class="shipment-id">${s.id}</div>
+      <div class="shipment-customer"><strong>${customerName}</strong></div>
+      <div class="shipment-info" style="margin-top:10px;">
+        <div class="row"><span class="label">关联订单</span><span>${s.orderId}</span></div>
+        ${order ? `<div class="row"><span class="label">订单总量</span><span>${order.orderQuantity.toLocaleString()} 尾</span></div>` : ""}
+        ${order ? `<div class="row"><span class="label">订单已发</span><span>${order.shippedQuantity.toLocaleString()} 尾</span></div>` : ""}
+        ${order ? `<div class="row"><span class="label">订单剩余</span><span>${order.remainingQuantity.toLocaleString()} 尾</span></div>` : ""}
+        <div class="row"><span class="label">本次发货</span><strong>${s.quantity.toLocaleString()} 尾</strong></div>
+        <div class="row"><span class="label">发货日期</span><span>${s.date}</span></div>
+        ${order ? `<div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>` : ""}
+      </div>
+      ${s.note ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${s.note}</div>` : ""}
+      <div class="shipment-actions">
+        <button type="button" class="danger" data-action="delete">删除</button>
+      </div>
+    </div>
+  `;
+    })
+    .join("");
+
+  list.querySelectorAll(".shipment-card").forEach((card) => {
+    const id = card.dataset.id;
+    const deleteBtn = card.querySelector('[data-action="delete"]');
+    if (deleteBtn) deleteBtn.onclick = (e) => { e.preventDefault(); deleteShipment(id); };
+  });
+}
+
+function renderShipments() {
+  const batchFilter = document.getElementById("shipmentBatchFilter");
+  const orderFilter = document.getElementById("shipmentStatusFilter");
+  if (batchFilter && db.batches) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    batchFilter.value = currentVal;
+  }
+  if (orderFilter && db.orders) {
+    const currentVal = orderFilter.value;
+    const validOrders = (db.orders || []).filter(
+      (o) => o.status !== "cancelled" && o.remainingQuantity > 0
+    );
+    orderFilter.innerHTML =
+      '<option value="">全部订单</option>' +
+      validOrders
+        .map((o) => {
+          const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+          return `<option value="${o.id}">${o.id} · ${customerName} · 剩余 ${o.remainingQuantity.toLocaleString()} 尾</option>`;
+        })
+        .join("");
+    orderFilter.value = currentVal;
+  }
+  renderShipmentStats();
+  renderShipmentList();
+}
+
+function openShipmentModal(shipmentId = null, prefillOrderId = null) {
+  const orders = (db.orders || []).filter(
+    (o) => o.status !== "cancelled" && o.remainingQuantity > 0
+  );
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>新增发货</h2>
+      <form id="shipmentForm">
+        <label>选择订单</label>
+        <select name="orderId" id="shipmentOrderSelect" required>
+          <option value="">请选择订单</option>
+          ${orders
+            .map((o) => {
+              const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+              const batch = db.batches?.find((b) => b.id === o.batchId);
+              const species = batch?.species || "";
+              return `<option value="${o.id}" ${prefillOrderId === o.id ? "selected" : ""}>${o.id} · ${customerName} · ${o.batchId}${species ? " · " + species : ""} · 剩余 ${o.remainingQuantity.toLocaleString()} 尾</option>`;
+            })
+            .join("")}
+        </select>
+        <div id="shipmentOrderInfo" style="margin-top:10px;padding:12px;background:#f8f9fa;border-radius:6px;"></div>
+        <label>发货数量（尾）</label>
+        <input name="quantity" id="shipmentQuantity" type="number" min="1" required placeholder="输入发货数量">
+        <div id="shipmentAvailableInfo" class="meta" style="font-size:12px;margin-top:4px;"></div>
+        <label>发货日期</label>
+        <input name="date" type="date" required value="${new Date().toISOString().split("T")[0]}">
+        <label>备注（选填）</label>
+        <textarea name="note" placeholder="发货备注信息"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">确认发货</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const updateOrderInfo = async () => {
+    const orderSelect = modal.querySelector("#shipmentOrderSelect");
+    const orderInfo = modal.querySelector("#shipmentOrderInfo");
+    const availableInfo = modal.querySelector("#shipmentAvailableInfo");
+    const quantityInput = modal.querySelector("#shipmentQuantity");
+    const orderId = orderSelect.value;
+    if (!orderId) {
+      orderInfo.innerHTML = "";
+      availableInfo.innerHTML = "";
+      return;
+    }
+    try {
+      const order = await api("/api/orders/" + orderId);
+      const availableRes = await api("/api/batches/" + order.batchId + "/available");
+      const customerName = order.customerInfo?.name || order.customerName || "未知客户";
+      orderInfo.innerHTML = `
+        <div class="row"><span class="label">客户</span><span>${customerName}</span></div>
+        <div class="row"><span class="label">订购数量</span><span>${order.orderQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">已发货</span><span>${order.shippedQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">订单剩余</span><strong>${order.remainingQuantity.toLocaleString()} 尾</strong></div>
+        <div class="row"><span class="label">批次可售</span><strong>${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
+        <div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>
+      `;
+      availableInfo.innerHTML = `最多可发 ${Math.min(order.remainingQuantity, availableRes.availableQuantity).toLocaleString()} 尾（订单剩余 ${order.remainingQuantity.toLocaleString()} 尾，批次可售 ${availableRes.availableQuantity.toLocaleString()} 尾）`;
+      quantityInput.max = Math.min(order.remainingQuantity, availableRes.availableQuantity);
+    } catch (err) {
+      orderInfo.innerHTML = `<span class="warning">${err.message}</span>`;
+    }
+  };
+
+  modal.querySelector("#shipmentOrderSelect").onchange = updateOrderInfo;
+  if (prefillOrderId) updateOrderInfo();
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+  modal.querySelector("#shipmentForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      await api("/api/shipments", { method: "POST", body: JSON.stringify(data) });
+      modal.remove();
+      await load();
+      alert("发货记录已保存");
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+async function deleteShipment(shipmentId) {
+  const shipment = (db.shipments || []).find((s) => s.id === shipmentId);
+  if (!shipment) return;
+  if (!confirm("确定要删除这条发货记录吗？删除后订单状态会自动更新。")) return;
+  try {
+    await api("/api/shipments/" + shipmentId, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function bindShipmentEvents() {
+  const addBtn = document.getElementById("addShipmentBtn");
+  const batchFilter = document.getElementById("shipmentBatchFilter");
+  const orderFilter = document.getElementById("shipmentStatusFilter");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openShipmentModal(); };
+  if (batchFilter) batchFilter.onchange = () => { renderShipmentStats(); renderShipmentList(); };
+  if (orderFilter) orderFilter.onchange = () => { renderShipmentStats(); renderShipmentList(); };
+}
+
 function renderWarningBanner() {
   const warnings = db.warnings || [];
   const pending = warnings.filter((w) => w.status === "pending" || w.status === "processing");
@@ -1658,6 +2238,36 @@ function setTab(tab) {
     fillSelects();
     renderWarnings();
     bindWarningEvents();
+  } else if (tab === "order") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const orderContainer = document.getElementById("orderContainer");
+    orderContainer.classList.remove("hidden");
+    orderContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderOrders();
+    bindOrderEvents();
+  } else if (tab === "shipment") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const shipmentContainer = document.getElementById("shipmentContainer");
+    shipmentContainer.classList.remove("hidden");
+    shipmentContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderShipments();
+    bindShipmentEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
@@ -1681,9 +2291,21 @@ async function load() {
   if (!db.warnings) db.warnings = [];
   if (!db.warningThresholds) db.warningThresholds = {};
   if (!db.inventories) db.inventories = [];
+  if (!db.orders) db.orders = [];
+  if (!db.shipments) db.shipments = [];
   try {
     const enrichedCustomers = await api("/api/customers");
     db.customers = enrichedCustomers;
+  } catch (e) {
+  }
+  try {
+    const enrichedOrders = await api("/api/orders");
+    db.orders = enrichedOrders;
+  } catch (e) {
+  }
+  try {
+    const enrichedShipments = await api("/api/shipments");
+    db.shipments = enrichedShipments;
   } catch (e) {
   }
   fillSelects();
@@ -1703,6 +2325,12 @@ async function load() {
   } else if (activeTab === "warning") {
     renderWarnings();
     bindWarningEvents();
+  } else if (activeTab === "order") {
+    renderOrders();
+    bindOrderEvents();
+  } else if (activeTab === "shipment") {
+    renderShipments();
+    bindShipmentEvents();
   } else {
     renderTrace();
     if (activeTab === "sale") {
