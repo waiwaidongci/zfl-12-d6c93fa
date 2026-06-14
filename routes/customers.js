@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 function validateCustomer(input, isUpdate = false) {
   const errors = [];
 
@@ -198,8 +200,18 @@ export function createCustomersRouter(helpers) {
           return sendJson(res, 400, { error: "validation_failed", details: errors });
         }
         const updated = sanitizeCustomer(input, customers[customerIndex]);
+        const beforeCustomer = JSON.parse(JSON.stringify(customers[customerIndex]));
         customers[customerIndex] = updated;
         db.customers = customers;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "customer_update",
+          targetType: "customer",
+          targetId: customerId,
+          before: beforeCustomer,
+          after: updated,
+          farmId: "",
+        });
         await saveDb(db);
         return sendJson(res, 200, updated);
       }
@@ -217,6 +229,15 @@ export function createCustomersRouter(helpers) {
         }
         const [deleted] = customers.splice(customerIndex, 1);
         db.customers = customers;
+        writeLog(db, {
+          operator: "",
+          action: "customer_delete",
+          targetType: "customer",
+          targetId: customerId,
+          before: deleted,
+          after: null,
+          farmId: "",
+        });
         await saveDb(db);
         return sendJson(res, 200, deleted);
       }
@@ -236,6 +257,15 @@ export function createCustomersRouter(helpers) {
       const newCustomer = sanitizeCustomer({ ...input, id: input.id.trim() });
       customers.push(newCustomer);
       db.customers = customers;
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "customer_create",
+        targetType: "customer",
+        targetId: newCustomer.id,
+        before: null,
+        after: newCustomer,
+        farmId: "",
+      });
       await saveDb(db);
       return sendJson(res, 201, newCustomer);
     }

@@ -1,5 +1,6 @@
 import { enrichOrder } from "./orders.js";
 import { enrichShipment, getBatchAvailableQuantity } from "./shipments.js";
+import { writeLog } from "../utils/audit-log.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -244,6 +245,16 @@ export function createBatchesRouter(helpers) {
         count: batch.estimatedCount,
         reason: "新批次入池",
         farmId: farmId,
+      });
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "batch_create",
+        targetType: "batch",
+        targetId: batch.id,
+        before: null,
+        after: batch,
+        farmId: farmId,
+        meta: { transferId: db.transfers[db.transfers.length - 1].id },
       });
       await saveDb(db);
       return sendJson(res, 201, batch);

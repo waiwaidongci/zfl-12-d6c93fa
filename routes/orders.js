@@ -1,3 +1,4 @@
+import { writeLog } from "../utils/audit-log.js";
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -194,6 +195,15 @@ export function createOrdersRouter(helpers) {
 
       db.orders = db.orders || [];
       db.orders.push(order);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "order_create",
+        targetType: "order",
+        targetId: order.id,
+        before: null,
+        after: order,
+        farmId: farmId,
+      });
       await saveDb(db);
 
       return sendJson(res, 201, enrichOrder(order, db));
@@ -253,6 +263,15 @@ export function createOrdersRouter(helpers) {
 
         orders[orderIndex] = updated;
         db.orders = orders;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: input.status !== undefined ? "order_cancel" : "order_update",
+          targetType: "order",
+          targetId: existing.id,
+          before: existing,
+          after: orders[orderIndex],
+          farmId: existing.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, enrichOrder(updated, db));
       }
@@ -273,6 +292,15 @@ export function createOrdersRouter(helpers) {
 
         const [deleted] = orders.splice(orderIndex, 1);
         db.orders = orders;
+        writeLog(db, {
+          operator: "",
+          action: "order_delete",
+          targetType: "order",
+          targetId: orderId,
+          before: order,
+          after: null,
+          farmId: order.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, { removed: deleted });
       }

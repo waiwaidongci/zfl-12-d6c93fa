@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -54,11 +56,21 @@ export function createWarningsRouter(helpers) {
     if (method === "PUT" && pathname === "/api/warnings/thresholds") {
       const input = await body(req);
       const db = await loadDb();
+      const oldThresholds = db.warningThresholds ? JSON.parse(JSON.stringify(db.warningThresholds)) : null;
       db.warningThresholds = {
         ...db.warningThresholds,
         ...input,
       };
       const regenerated = regenerateAllWarnings(db);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "threshold_update",
+        targetType: "threshold",
+        targetId: "warningThresholds",
+        before: oldThresholds,
+        after: db.warningThresholds,
+        farmId: "",
+      });
       await saveDb(db);
       return sendJson(res, 200, { thresholds: db.warningThresholds, regeneratedCount: regenerated });
     }
@@ -102,6 +114,7 @@ export function createWarningsRouter(helpers) {
       if (!validStatuses.includes(input.status)) {
         return sendJson(res, 400, { error: "无效的处理状态" });
       }
+      const beforeHandle = { status: warning.status, handler: warning.handler, handleNote: warning.handleNote };
       if (!warning.handleHistory) warning.handleHistory = [];
       warning.handleHistory.push({
         fromStatus: warning.status,
@@ -120,6 +133,15 @@ export function createWarningsRouter(helpers) {
       if (input.status === "resolved" || input.status === "ignored") {
         warning.resolvedAt = new Date().toISOString();
       }
+      writeLog(db, {
+        operator: input.handler || "",
+        action: "warning_handle",
+        targetType: "warning",
+        targetId: warning.id,
+        before: beforeHandle,
+        after: { status: warning.status, handler: warning.handler, handleNote: warning.handleNote },
+        farmId: warning.farmId || "",
+      });
       await saveDb(db);
       return sendJson(res, 200, warning);
     }
@@ -139,6 +161,15 @@ export function createWarningsRouter(helpers) {
         return sendJson(res, 404, { error: "预警不存在" });
       }
       db.warnings.splice(idx, 1);
+      writeLog(db, {
+        operator: "",
+        action: "warning_delete",
+        targetType: "warning",
+        targetId: existing.id,
+        before: existing,
+        after: null,
+        farmId: existing.farmId || "",
+      });
       await saveDb(db);
       return sendJson(res, 200, { ok: true });
     }

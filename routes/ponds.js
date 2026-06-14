@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const VALID_STATUSES = ["active", "idle", "cleaning", "maintenance"];
 const VALID_PURPOSES = ["虾苗培育", "蟹苗培育", "贝苗培育", "鱼种培育", "暂养池", "其他"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
@@ -124,6 +126,15 @@ export function createPondsRouter(helpers) {
         const updated = sanitizePond(input, existing);
         updated.farmId = existing.farmId;
         db.ponds[pondIndex] = updated;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "pond_update",
+          targetType: "pond",
+          targetId: existing.id,
+          before: existing,
+          after: updated,
+          farmId: existing.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, updated);
       }
@@ -149,6 +160,15 @@ export function createPondsRouter(helpers) {
           });
         }
         const [deleted] = db.ponds.splice(pondIndex, 1);
+        writeLog(db, {
+          operator: "",
+          action: "pond_delete",
+          targetType: "pond",
+          targetId: deleted.id,
+          before: deleted,
+          after: null,
+          farmId: deleted.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, deleted);
       }
@@ -167,6 +187,15 @@ export function createPondsRouter(helpers) {
       const farmId = input.farmId || getDefaultFarmId(db);
       const newPond = sanitizePond({ ...input, id: input.id.trim(), farmId });
       db.ponds.push(newPond);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "pond_create",
+        targetType: "pond",
+        targetId: newPond.id,
+        before: null,
+        after: newPond,
+        farmId: farmId,
+      });
       await saveDb(db);
       return sendJson(res, 201, newPond);
     }
@@ -210,6 +239,15 @@ export function createPondsRouter(helpers) {
         farmId: existing.farmId,
       };
       db.ponds[pondIndex] = updated;
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "pond_status",
+        targetType: "pond",
+        targetId: existing.id,
+        before: existing,
+        after: updated,
+        farmId: existing.farmId,
+      });
       await saveDb(db);
       return sendJson(res, 200, updated);
     }

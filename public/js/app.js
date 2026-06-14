@@ -59,6 +59,8 @@ const forms = {
     '<h2>数据导入导出</h2><div class="dataio-section"><h3>导出数据</h3><p class="meta">将系统数据导出为 CSV 文件下载，可用于备份或离线处理</p><div class="dataio-export-btns"><button type="button" class="dataio-export-btn" data-export="batches">导出批次</button><button type="button" class="dataio-export-btn" data-export="records">导出每日记录</button><button type="button" class="dataio-export-btn" data-export="transfers">导出分池合池</button><button type="button" class="dataio-export-btn" data-export="sales">导出销售记录</button></div></div><div class="dataio-section"><h3>导入每日水质投喂记录</h3><div class="dataio-field-info" style="margin-top:8px;padding:10px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><p class="meta" style="margin:0 0 6px;"><strong>必填列：</strong>batchId（批次号）、date（日期 YYYY-MM-DD）、temperature（水温℃）、salinity（盐度）、oxygen（溶氧mg/L）、feed（投喂量kg）、mortality（死亡率%）</p><p class="meta" style="margin:0 0 6px;"><strong>选填列：</strong>poolId（池号）、abnormal（异常情况，默认为"无"）</p><p class="meta" style="margin:0;"><strong>说明：</strong>系统会在导入前校验字段缺失、批次不存在、数值非法和重复日期，确认后才会写入 data/hatchery.json。可点击下方「下载模板」获取包含示例的 CSV 模板文件。</p></div><div class="dataio-import-area" style="margin-top:10px;"><input type="file" id="dataioFileInput" accept=".csv" /><button type="button" id="dataioPreviewBtn" disabled>预检导入</button><button type="button" id="dataioDownloadTemplate">下载模板</button><a href="/examples/records_template.csv" download target="_blank" style="margin-left:8px;font-size:13px;color:var(--blue);">查看示例文件 ↗</a></div><div id="dataioPreviewResult" class="hidden"></div></div>',
   farm:
     '<h2>场区管理</h2><div class="farm-toolbar"><div class="spacer"></div><button type="button" id="addFarmBtn">+ 新增场区</button></div><div class="farm-stats" id="farmStats"></div><div class="grid" id="farmList"></div>',
+  auditlog:
+    '<h2>操作日志</h2><div class="auditlog-toolbar"><select id="auditlogActionFilter"><option value="">全部操作</option></select><select id="auditlogTargetFilter"><option value="">全部对象</option></select><input id="auditlogOperatorSearch" placeholder="操作者..."><input id="auditlogStartDate" type="date" placeholder="开始日期"><input id="auditlogEndDate" type="date" placeholder="结束日期"><div class="spacer"></div><button type="button" id="auditlogRollbackBtn" class="secondary" style="background:#a84e35;color:#fff;">↩ 撤销最近操作</button></div><div class="auditlog-stats" id="auditlogStats"></div><div class="auditlog-list" id="auditlogList"></div><div class="auditlog-pagination" id="auditlogPagination"></div>',
 };
 
 let db = {};
@@ -2401,6 +2403,353 @@ function renderWarningBanner() {
 }
 
 let dataioPendingRecords = [];
+let auditlogPage = 1;
+
+const ACTION_LABELS_MAP = {
+  batch_create: "新建批次",
+  record_create: "新增每日记录",
+  record_update: "修改每日记录",
+  record_delete: "删除每日记录",
+  transfer_create: "分池合池",
+  sale_create: "出苗销售",
+  cost_create: "新增成本",
+  cost_update: "修改成本",
+  cost_delete: "删除成本",
+  warning_handle: "预警处理",
+  warning_delete: "删除预警",
+  threshold_update: "阈值配置",
+  pond_create: "新增育苗池",
+  pond_update: "修改育苗池",
+  pond_delete: "删除育苗池",
+  pond_status: "修改池状态",
+  inventory_create: "盘点校准",
+  inventory_delete: "删除盘点",
+  order_create: "新增订单",
+  order_update: "修改订单",
+  order_delete: "删除订单",
+  order_cancel: "取消订单",
+  shipment_create: "新增发货",
+  shipment_delete: "删除发货",
+  customer_create: "新增客户",
+  customer_update: "修改客户",
+  customer_delete: "删除客户",
+  farm_create: "新增场区",
+  farm_update: "修改场区",
+  farm_delete: "删除场区",
+  farm_set_default: "设置默认场区",
+  rollback: "撤销操作",
+};
+
+const TARGET_LABELS_MAP = {
+  batch: "批次",
+  record: "每日记录",
+  transfer: "分池合池",
+  sale: "销售记录",
+  cost: "成本项目",
+  warning: "预警",
+  pond: "育苗池",
+  inventory: "盘点记录",
+  order: "订单",
+  shipment: "发货记录",
+  customer: "客户",
+  farm: "场区",
+  threshold: "预警阈值",
+  auditLog: "操作日志",
+};
+
+async function renderAuditLogs() {
+  const actionFilter = document.getElementById("auditlogActionFilter")?.value || "";
+  const targetFilter = document.getElementById("auditlogTargetFilter")?.value || "";
+  const operatorSearch = document.getElementById("auditlogOperatorSearch")?.value?.trim() || "";
+  const startDate = document.getElementById("auditlogStartDate")?.value || "";
+  const endDate = document.getElementById("auditlogEndDate")?.value || "";
+  const farmId = getEffectiveFarmId();
+
+  const params = new URLSearchParams();
+  if (farmId) params.set("farmId", farmId);
+  if (actionFilter) params.set("action", actionFilter);
+  if (targetFilter) params.set("targetType", targetFilter);
+  if (operatorSearch) params.set("operator", operatorSearch);
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+  params.set("page", auditlogPage);
+  params.set("pageSize", "30");
+
+  let result;
+  try {
+    result = await api("/api/audit-logs?" + params.toString());
+  } catch (err) {
+    document.getElementById("auditlogList").innerHTML = `<div class="meta" style="padding:24px;text-align:center;color:#a84e35;">加载失败：${err.message}</div>`;
+    return;
+  }
+
+  const actionSelect = document.getElementById("auditlogActionFilter");
+  const targetSelect = document.getElementById("auditlogTargetFilter");
+  if (actionSelect && actionSelect.options.length <= 1) {
+    Object.entries(ACTION_LABELS_MAP).forEach(([key, label]) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = label;
+      actionSelect.appendChild(opt);
+    });
+  }
+  if (targetSelect && targetSelect.options.length <= 1) {
+    Object.entries(TARGET_LABELS_MAP).forEach(([key, label]) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = label;
+      targetSelect.appendChild(opt);
+    });
+  }
+
+  const rollbackBtn = document.getElementById("auditlogRollbackBtn");
+  if (rollbackBtn) {
+    if (result.latestRollbackable) {
+      rollbackBtn.disabled = false;
+      rollbackBtn.textContent = `↩ 撤销: ${ACTION_LABELS_MAP[result.latestRollbackable.action] || result.latestRollbackable.action}(${result.latestRollbackable.targetId || ""}) - ${result.latestRollbackable.operator}`;
+    } else {
+      rollbackBtn.disabled = true;
+      rollbackBtn.textContent = "↩ 无可撤销操作";
+    }
+  }
+
+  const stats = document.getElementById("auditlogStats");
+  if (stats) {
+    stats.innerHTML = [
+      ["日志总数", result.total],
+      ["当前页", `${result.page}/${result.totalPages || 1}`],
+    ].map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join("");
+  }
+
+  const list = document.getElementById("auditlogList");
+  if (!result.items || !result.items.length) {
+    list.innerHTML = `<div class="meta" style="padding:24px;text-align:center;">暂无操作日志记录</div>`;
+    document.getElementById("auditlogPagination").innerHTML = "";
+    return;
+  }
+
+  list.innerHTML = result.items.map((log) => {
+    const actionLabel = log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action;
+    const targetLabel = log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType;
+    const time = new Date(log.createdAt).toLocaleString("zh-CN");
+    const rolledBackClass = log.rolledBack ? " auditlog-rolled-back" : "";
+    const isRollback = log.action === "rollback";
+
+    let detailHtml = "";
+    if (log.before && log.after) {
+      detailHtml = `<div class="auditlog-diff"><span class="label">变更前：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span><span class="label" style="margin-left:8px;">变更后：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
+    } else if (log.after && !log.before) {
+      detailHtml = `<div class="auditlog-diff"><span class="label">新增数据：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
+    } else if (log.before && !log.after) {
+      detailHtml = `<div class="auditlog-diff"><span class="label">删除数据：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span></div>`;
+    }
+    if (log.meta) {
+      const metaStr = Object.entries(log.meta).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
+      detailHtml += `<div class="auditlog-meta"><span class="label">附加信息：</span>${metaStr}</div>`;
+    }
+
+    return `
+      <div class="auditlog-item${rolledBackClass}${isRollback ? " auditlog-rollback" : ""}" data-log-id="${log.id}" data-rollbackable="${log.rollbackable}">
+        <div class="auditlog-header">
+          <span class="auditlog-action${isRollback ? " action-rollback" : ""}">${actionLabel}</span>
+          <span class="auditlog-target">${targetLabel}${log.targetId ? " #" + log.targetId : ""}</span>
+          <span class="auditlog-operator">${log.operator || "系统"}</span>
+          <span class="auditlog-time">${time}</span>
+          ${log.rolledBack ? '<span class="status-badge status-maintenance">已撤销</span>' : ""}
+          ${log.rollbackable ? '<button type="button" class="tiny-btn auditlog-rollback-item-btn" data-action="rollback-item">撤销</button>' : ""}
+          <button type="button" class="tiny-btn" data-action="detail">详情</button>
+        </div>
+        ${detailHtml}
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".auditlog-item").forEach((item) => {
+    const logId = item.dataset.logId;
+    const detailBtn = item.querySelector('[data-action="detail"]');
+    const rollbackItemBtn = item.querySelector('[data-action="rollback-item"]');
+    if (detailBtn) {
+      detailBtn.onclick = async (e) => {
+        e.preventDefault();
+        try {
+          const detail = await api("/api/audit-logs/" + logId);
+          openAuditLogDetailModal(detail);
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+    }
+    if (rollbackItemBtn) {
+      rollbackItemBtn.onclick = (e) => {
+        e.preventDefault();
+        openRollbackConfirmModal(logId);
+      };
+    }
+  });
+
+  const pagination = document.getElementById("auditlogPagination");
+  if (result.totalPages > 1) {
+    let html = "";
+    if (result.page > 1) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page - 1}">上一页</button>`;
+    html += `<span class="auditlog-page-info">${result.page} / ${result.totalPages}</span>`;
+    if (result.page < result.totalPages) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page + 1}">下一页</button>`;
+    pagination.innerHTML = html;
+    pagination.querySelectorAll(".auditlog-page-btn").forEach((btn) => {
+      btn.onclick = () => {
+        auditlogPage = Number(btn.dataset.page);
+        renderAuditLogs();
+      };
+    });
+  } else {
+    pagination.innerHTML = "";
+  }
+}
+
+function formatLogData(data) {
+  if (!data) return "-";
+  if (Array.isArray(data)) {
+    if (data.length === 0) return "[]";
+    if (data.length <= 3) return data.map((d) => d.id || JSON.stringify(d)).join(", ");
+    return data.slice(0, 2).map((d) => d.id || JSON.stringify(d)).join(", ") + ` ...等${data.length}项`;
+  }
+  if (typeof data === "object") {
+    const id = data.id;
+    if (id) {
+      const summary = Object.entries(data).filter(([k]) => k !== "id" && k !== "farmId").slice(0, 4).map(([k, v]) => `${k}=${typeof v === "object" ? "..." : v}`).join(", ");
+      return `${id}(${summary})`;
+    }
+    return JSON.stringify(data).slice(0, 100);
+  }
+  return String(data).slice(0, 100);
+}
+
+function openAuditLogDetailModal(log) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  const beforeJson = log.before ? JSON.stringify(log.before, null, 2) : "无";
+  const afterJson = log.after ? JSON.stringify(log.after, null, 2) : "无";
+  const metaJson = log.meta ? JSON.stringify(log.meta, null, 2) : "无";
+  const rollbackReason = log.rollbackReason || "";
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>操作日志详情</h2>
+      <div class="detail-grid">
+        <div class="detail-section">
+          <h3>基本信息</h3>
+          <div class="detail-row"><span class="label">日志ID</span><span>${log.id}</span></div>
+          <div class="detail-row"><span class="label">操作类型</span><span>${log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action}</span></div>
+          <div class="detail-row"><span class="label">操作对象</span><span>${log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType} ${log.targetId ? "#" + log.targetId : ""}</span></div>
+          <div class="detail-row"><span class="label">操作者</span><span>${log.operator || "系统"}</span></div>
+          <div class="detail-row"><span class="label">时间</span><span>${new Date(log.createdAt).toLocaleString("zh-CN")}</span></div>
+          <div class="detail-row"><span class="label">场区</span><span>${log.farmId || "-"}</span></div>
+          <div class="detail-row"><span class="label">已撤销</span><span>${log.rolledBack ? "是" : "否"}</span></div>
+          ${log.rollbackable ? '<div class="detail-row"><span class="label">可撤销</span><span style="color:var(--blue);">是</span></div>' : ""}
+          ${rollbackReason ? `<div class="detail-row"><span class="label">不可撤销原因</span><span style="color:#a84e35;">${rollbackReason}</span></div>` : ""}
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>变更前数据</h3>
+        <pre class="auditlog-json">${beforeJson}</pre>
+      </div>
+      <div class="detail-section">
+        <h3>变更后数据</h3>
+        <pre class="auditlog-json">${afterJson}</pre>
+      </div>
+      ${log.meta ? `<div class="detail-section"><h3>附加信息</h3><pre class="auditlog-json">${metaJson}</pre></div>` : ""}
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeBtn">关闭</button>
+        ${log.rollbackable ? '<button type="button" id="rollbackDetailBtn" style="background:#a84e35;color:#fff;">撤销此操作</button>' : ""}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#closeBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  if (modal.querySelector("#rollbackDetailBtn")) {
+    modal.querySelector("#rollbackDetailBtn").onclick = () => {
+      modal.remove();
+      openRollbackConfirmModal(log.id);
+    };
+  }
+}
+
+function openRollbackConfirmModal(logId) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>确认撤销操作</h2>
+      <div class="warning-handle-summary" style="background:#fff3f0;padding:12px;border-radius:6px;margin-bottom:12px;">
+        <p style="margin:0 0 6px;color:#a84e35;"><strong>⚠ 注意：撤销操作将恢复数据到操作前的状态</strong></p>
+        <p style="margin:0;font-size:13px;">此操作不可逆，撤销后原操作将被标记为已撤销。仅可撤销最近24小时内的操作。</p>
+      </div>
+      <form id="rollbackForm">
+        <label>操作者姓名（必填）</label>
+        <input name="operator" required placeholder="输入您的姓名以确认撤销">
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit" style="background:#a84e35;color:#fff;">确认撤销</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#rollbackForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      const result = await api("/api/audit-logs/" + logId + "/rollback", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      modal.remove();
+      alert(result.message);
+      await load();
+      renderAuditLogs();
+    } catch (err) {
+      alert("撤销失败：" + err.message);
+    }
+  };
+}
+
+function bindAuditLogEvents() {
+  const actionFilter = document.getElementById("auditlogActionFilter");
+  const targetFilter = document.getElementById("auditlogTargetFilter");
+  const operatorSearch = document.getElementById("auditlogOperatorSearch");
+  const startDate = document.getElementById("auditlogStartDate");
+  const endDate = document.getElementById("auditlogEndDate");
+  const rollbackBtn = document.getElementById("auditlogRollbackBtn");
+
+  const filterChange = () => {
+    auditlogPage = 1;
+    renderAuditLogs();
+  };
+
+  if (actionFilter) actionFilter.onchange = filterChange;
+  if (targetFilter) targetFilter.onchange = filterChange;
+  if (operatorSearch) operatorSearch.oninput = filterChange;
+  if (startDate) startDate.onchange = filterChange;
+  if (endDate) endDate.onchange = filterChange;
+
+  if (rollbackBtn) {
+    rollbackBtn.onclick = async () => {
+      try {
+        const farmId = getEffectiveFarmId();
+        const params = farmId ? "?farmId=" + farmId : "";
+        const result = await api("/api/audit-logs/latest-rollbackable" + params);
+        if (!result.log) {
+          alert("当前无可撤销的操作");
+          return;
+        }
+        openRollbackConfirmModal(result.log.id);
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+}
 
 function bindDataIoEvents() {
   dataioPendingRecords = [];
@@ -2576,6 +2925,7 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
@@ -2591,6 +2941,7 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
@@ -2607,6 +2958,7 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.remove("hidden");
     inventoryContainer.innerHTML = forms[tab];
     fillSelects();
@@ -2620,6 +2972,7 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
@@ -2635,6 +2988,7 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const warningContainer = document.getElementById("warningContainer");
     warningContainer.classList.remove("hidden");
@@ -2652,6 +3006,7 @@ function setTab(tab) {
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const orderContainer = document.getElementById("orderContainer");
     orderContainer.classList.remove("hidden");
@@ -2669,6 +3024,7 @@ function setTab(tab) {
     document.getElementById("orderContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const shipmentContainer = document.getElementById("shipmentContainer");
     shipmentContainer.classList.remove("hidden");
@@ -2686,6 +3042,7 @@ function setTab(tab) {
     document.getElementById("orderContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const farmContainer = document.getElementById("farmContainer");
     farmContainer.classList.remove("hidden");
@@ -2704,12 +3061,31 @@ function setTab(tab) {
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const dataioContainer = document.getElementById("dataioContainer");
     dataioContainer.classList.remove("hidden");
     dataioContainer.innerHTML = forms[tab];
     fillSelects();
     bindDataIoEvents();
+  } else if (tab === "auditlog") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const auditlogContainer = document.getElementById("auditlogContainer");
+    auditlogContainer.classList.remove("hidden");
+    auditlogContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderAuditLogs();
+    bindAuditLogEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
@@ -2721,6 +3097,7 @@ function setTab(tab) {
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
@@ -2740,6 +3117,7 @@ async function load() {
   if (!db.inventories) db.inventories = [];
   if (!db.orders) db.orders = [];
   if (!db.shipments) db.shipments = [];
+  if (!db.opLogs) db.opLogs = [];
 
   if (!db.farms.length) {
     db.farms = [{ id: "default", name: "默认场区", isDefault: true }];
@@ -2804,6 +3182,9 @@ async function load() {
     bindShipmentEvents();
   } else if (activeTab === "dataio") {
     bindDataIoEvents();
+  } else if (activeTab === "auditlog") {
+    renderAuditLogs();
+    bindAuditLogEvents();
   } else if (activeTab === "farm") {
     renderFarms();
     bindFarmEvents();

@@ -1683,3 +1683,156 @@ button.tiny {
     flex-wrap: wrap;
   }
 }
+
+.auditlog-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.auditlog-toolbar select,
+.auditlog-toolbar input {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--panel);
+}
+.auditlog-toolbar input[type="date"] {
+  width: 140px;
+}
+.auditlog-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.auditlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.auditlog-item {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  transition: box-shadow 0.2s;
+}
+.auditlog-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.auditlog-item.auditlog-rolled-back {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.auditlog-item.auditlog-rollback {
+  border-left: 4px solid var(--blue);
+}
+.auditlog-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.auditlog-action {
+  background: var(--blue);
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.auditlog-action.action-rollback {
+  background: #4a6b8a;
+}
+.auditlog-target {
+  font-size: 13px;
+  color: var(--muted);
+}
+.auditlog-operator {
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 600;
+}
+.auditlog-time {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.auditlog-diff {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.auditlog-diff-before {
+  color: var(--warn);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.auditlog-diff-after {
+  color: var(--green);
+}
+.auditlog-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.auditlog-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px;
+}
+.auditlog-page-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 13px;
+}
+.auditlog-page-btn:hover {
+  background: var(--bg);
+}
+.auditlog-page-info {
+  font-size: 13px;
+  color: var(--muted);
+}
+.auditlog-json {
+  background: #f4f7f6;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.tiny-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  cursor: pointer;
+  color: var(--muted);
+}
+.tiny-btn:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+.auditlog-rollback-item-btn {
+  background: #fff3f0;
+  color: var(--warn);
+  border-color: #f0c9a0;
+}
+.auditlog-rollback-item-btn:hover {
+  background: #ffeee8;
+}

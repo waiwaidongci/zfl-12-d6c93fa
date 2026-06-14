@@ -17,6 +17,7 @@ import { createOrdersRouter } from "./routes/orders.js";
 import { createShipmentsRouter } from "./routes/shipments.js";
 import { createDataIoRouter } from "./routes/data-io.js";
 import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm } from "./routes/farms.js";
+import { createAuditLogRouter } from "./routes/audit-log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -111,6 +112,7 @@ function filterStateByFarm(db, farmId) {
     "shipments",
     "warnings",
     "inventories",
+    "opLogs",
   ];
   const scopedDb = { ...db };
   for (const collection of scopedCollections) {
@@ -135,6 +137,7 @@ const ordersRouter = createOrdersRouter(helpers);
 const shipmentsRouter = createShipmentsRouter(helpers);
 const dataIoRouter = createDataIoRouter(helpers);
 const farmsRouter = createFarmsRouter(helpers);
+const auditLogRouter = createAuditLogRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -183,6 +186,9 @@ async function routeApi(req, res, url, method) {
 
   const result13 = await farmsRouter(req, res, pathname, method);
   if (result13 !== false) return result13;
+
+  const result14 = await auditLogRouter(req, res, pathname, method);
+  if (result14 !== false) return result14;
 
   return false;
 }

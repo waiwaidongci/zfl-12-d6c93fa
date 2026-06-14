@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -76,6 +78,15 @@ export function createSalesRouter(helpers) {
 
       if (!db.sales) db.sales = [];
       db.sales.push(sale);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "sale_create",
+        targetType: "sale",
+        targetId: sale.id,
+        before: null,
+        after: sale,
+        farmId: farmId,
+      });
       await saveDb(db);
       return sendJson(res, 201, enrichSale(sale, db));
     }

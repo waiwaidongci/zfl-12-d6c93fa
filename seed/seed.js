@@ -230,6 +230,7 @@ export const seedData = {
       farmId: "FARM-DEFAULT",
     },
   ],
+  opLogs: [],
 };
 
 export function getInitialSeed() {

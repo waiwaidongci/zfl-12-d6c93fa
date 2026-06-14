@@ -1,4 +1,5 @@
 import { generateWarningsFromRecord, removeWarningsForRecord } from "./warnings.js";
+import { writeLog } from "../utils/audit-log.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -59,6 +60,15 @@ export function createRecordsRouter(helpers) {
         farmId: farmId,
       };
       db.records.push(record);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "record_create",
+        targetType: "record",
+        targetId: record.id,
+        before: null,
+        after: record,
+        farmId: farmId,
+      });
 
       const generatedWarnings = generateWarningsFromRecord(record, db);
       for (const w of generatedWarnings) {
@@ -111,6 +121,15 @@ export function createRecordsRouter(helpers) {
           farmId: existing.farmId,
         };
         db.records[recordIndex] = updated;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "record_update",
+          targetType: "record",
+          targetId: existing.id,
+          before: existing,
+          after: updated,
+          farmId: existing.farmId,
+        });
 
         const updatedWarnings = generateWarningsFromRecord(updated, db, true);
 
@@ -129,6 +148,15 @@ export function createRecordsRouter(helpers) {
         }
         const removedCount = removeWarningsForRecord(recordId, db);
         db.records.splice(recordIndex, 1);
+        writeLog(db, {
+          operator: "",
+          action: "record_delete",
+          targetType: "record",
+          targetId: recordId,
+          before: existing,
+          after: null,
+          farmId: existing.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, { ok: true, removedWarningsCount: removedCount });
       }

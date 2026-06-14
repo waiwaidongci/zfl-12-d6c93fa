@@ -1,3 +1,4 @@
+import { writeLog } from "../utils/audit-log.js";
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -203,6 +204,15 @@ export function createShipmentsRouter(helpers) {
 
       db.shipments = db.shipments || [];
       db.shipments.push(shipment);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "shipment_create",
+        targetType: "shipment",
+        targetId: shipment.id,
+        before: null,
+        after: shipment,
+        farmId: farmId,
+      });
       await saveDb(db);
 
       return sendJson(res, 201, enrichShipment(shipment, db));
@@ -231,6 +241,15 @@ export function createShipmentsRouter(helpers) {
         }
         const [deleted] = shipments.splice(shipmentIndex, 1);
         db.shipments = shipments;
+        writeLog(db, {
+          operator: "",
+          action: "shipment_delete",
+          targetType: "shipment",
+          targetId: shipmentId,
+          before: shipment,
+          after: null,
+          farmId: shipment.farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, { removed: deleted });
       }

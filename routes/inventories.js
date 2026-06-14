@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -97,6 +99,17 @@ export function createInventoriesRouter(helpers) {
 
       batch.estimatedCount = actualCount;
 
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "inventory_create",
+        targetType: "inventory",
+        targetId: inventory.id,
+        before: null,
+        after: inventory,
+        farmId: farmId,
+        meta: { batchId: batch.id, previousEstimatedCount: systemEstimate },
+      });
+
       await saveDb(db);
       return sendJson(res, 201, inventory);
     }
@@ -138,6 +151,16 @@ export function createInventoriesRouter(helpers) {
             batch.estimatedCount = removed.beforeCount;
           }
         }
+
+        writeLog(db, {
+          operator: "",
+          action: "inventory_delete",
+          targetType: "inventory",
+          targetId: removed.id,
+          before: removed,
+          after: null,
+          farmId: removed.farmId,
+        });
 
         await saveDb(db);
         return sendJson(res, 200, { ok: true, removed });

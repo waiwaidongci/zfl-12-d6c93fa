@@ -296,6 +296,15 @@
       "unit": "批",
       "description": "消毒用品及耗材",
       "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "COST-1781445580301",
+      "batchId": "B-260601",
+      "category": "能源",
+      "date": "2026-08-12",
+      "amount": 3000,
+      "description": "测试UI回滚",
+      "farmId": "FARM-DEFAULT"
     }
   ],
   "customers": [
@@ -438,6 +447,107 @@
       "note": "第二生产基地",
       "isDefault": false,
       "createdAt": "2026-06-14T12:20:48.131Z"
+    }
+  ],
+  "opLogs": [
+    {
+      "id": "LOG-1781445477479-fza0",
+      "operator": "测试用户",
+      "action": "record_create",
+      "targetType": "record",
+      "targetId": "REC-1781445477479",
+      "before": null,
+      "after": {
+        "id": "REC-1781445477479",
+        "batchId": "B-260601",
+        "date": "2026-08-15",
+        "poolId": "P-03",
+        "temperature": 28.5,
+        "salinity": 22,
+        "oxygen": 6.2,
+        "feed": 20,
+        "mortality": 0.3,
+        "abnormal": "无",
+        "farmId": "FARM-DEFAULT"
+      },
+      "farmId": "FARM-DEFAULT",
+      "meta": null,
+      "rolledBack": true,
+      "createdAt": "2026-06-14T13:57:57.479Z"
+    },
+    {
+      "id": "LOG-1781445489039-neoa",
+      "operator": "撤销测试",
+      "action": "rollback",
+      "targetType": "auditLog",
+      "targetId": "LOG-1781445477479-fza0",
+      "before": null,
+      "after": null,
+      "farmId": "FARM-DEFAULT",
+      "meta": {
+        "rolledBackAction": "record_create",
+        "rolledBackTargetId": "REC-1781445477479"
+      },
+      "rolledBack": false,
+      "createdAt": "2026-06-14T13:58:09.039Z"
+    },
+    {
+      "id": "LOG-1781445510927-48n6",
+      "operator": "测试员",
+      "action": "cost_create",
+      "targetType": "cost",
+      "targetId": "COST-1781445510927",
+      "before": null,
+      "after": {
+        "id": "COST-1781445510927",
+        "batchId": "B-260601",
+        "category": "饲料",
+        "date": "2026-08-10",
+        "amount": 5000,
+        "description": "测试回滚成本",
+        "farmId": "FARM-DEFAULT"
+      },
+      "farmId": "FARM-DEFAULT",
+      "meta": null,
+      "rolledBack": true,
+      "createdAt": "2026-06-14T13:58:30.927Z"
+    },
+    {
+      "id": "LOG-1781445523301-vq5b",
+      "operator": "管理员",
+      "action": "rollback",
+      "targetType": "auditLog",
+      "targetId": "LOG-1781445510927-48n6",
+      "before": null,
+      "after": null,
+      "farmId": "FARM-DEFAULT",
+      "meta": {
+        "rolledBackAction": "cost_create",
+        "rolledBackTargetId": "COST-1781445510927"
+      },
+      "rolledBack": false,
+      "createdAt": "2026-06-14T13:58:43.301Z"
+    },
+    {
+      "id": "LOG-1781445580301-32hh",
+      "operator": "前端测试",
+      "action": "cost_create",
+      "targetType": "cost",
+      "targetId": "COST-1781445580301",
+      "before": null,
+      "after": {
+        "id": "COST-1781445580301",
+        "batchId": "B-260601",
+        "category": "能源",
+        "date": "2026-08-12",
+        "amount": 3000,
+        "description": "测试UI回滚",
+        "farmId": "FARM-DEFAULT"
+      },
+      "farmId": "FARM-DEFAULT",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-14T13:59:40.301Z"
     }
   ]
 }

@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -54,8 +56,19 @@ export function createTransfersRouter(helpers) {
         reason: input.reason || "",
         farmId: farmId,
       };
+      const previousPool = batch.currentPool;
       batch.currentPool = input.toPool;
       db.transfers.push(transfer);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "transfer_create",
+        targetType: "transfer",
+        targetId: transfer.id,
+        before: null,
+        after: transfer,
+        farmId: farmId,
+        meta: { batchId: batch.id, previousPool: previousPool },
+      });
       await saveDb(db);
       return sendJson(res, 201, transfer);
     }

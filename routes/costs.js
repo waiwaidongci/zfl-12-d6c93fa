@@ -1,3 +1,4 @@
+import { writeLog } from "../utils/audit-log.js";
 const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -112,6 +113,15 @@ export function createCostsRouter(helpers) {
 
       if (!db.costItems) db.costItems = [];
       db.costItems.push(costItem);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "cost_create",
+        targetType: "cost",
+        targetId: costItem.id,
+        before: null,
+        after: costItem,
+        farmId: farmId,
+      });
       await saveDb(db);
       return sendJson(res, 201, costItem);
     }
@@ -155,6 +165,15 @@ export function createCostsRouter(helpers) {
 
       costItems[index] = updated;
       db.costItems = costItems;
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "cost_update",
+        targetType: "cost",
+        targetId: existing.id,
+        before: existing,
+        after: costItems[index],
+        farmId: existing.farmId,
+      });
       await saveDb(db);
       return sendJson(res, 200, costItems[index]);
     }
@@ -176,6 +195,15 @@ export function createCostsRouter(helpers) {
 
       costItems.splice(index, 1);
       db.costItems = costItems;
+      writeLog(db, {
+        operator: "",
+        action: "cost_delete",
+        targetType: "cost",
+        targetId: existing.id,
+        before: existing,
+        after: null,
+        farmId: existing.farmId,
+      });
       await saveDb(db);
       return sendJson(res, 200, { success: true });
     }

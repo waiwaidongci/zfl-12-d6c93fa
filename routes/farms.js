@@ -1,3 +1,5 @@
+import { writeLog } from "../utils/audit-log.js";
+
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function validateFarm(input, isUpdate = false) {
@@ -152,8 +154,18 @@ export function createFarmsRouter(helpers) {
         }
 
         const updated = sanitizeFarm(input, farms[farmIndex]);
+        const beforeFarm = JSON.parse(JSON.stringify(farms[farmIndex]));
         farms[farmIndex] = updated;
         db.farms = farms;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "farm_update",
+          targetType: "farm",
+          targetId: farmId,
+          before: beforeFarm,
+          after: updated,
+          farmId: farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, updated);
       }
@@ -196,6 +208,15 @@ export function createFarmsRouter(helpers) {
 
         const [deleted] = farms.splice(farmIndex, 1);
         db.farms = farms;
+        writeLog(db, {
+          operator: "",
+          action: "farm_delete",
+          targetType: "farm",
+          targetId: farmId,
+          before: deleted,
+          after: null,
+          farmId: farmId,
+        });
         await saveDb(db);
         return sendJson(res, 200, deleted);
       }
@@ -224,6 +245,15 @@ export function createFarmsRouter(helpers) {
       });
       farms.push(newFarm);
       db.farms = farms;
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "farm_create",
+        targetType: "farm",
+        targetId: newFarm.id,
+        before: null,
+        after: newFarm,
+        farmId: newFarm.id,
+      });
       await saveDb(db);
       return sendJson(res, 201, newFarm);
     }
@@ -239,6 +269,15 @@ export function createFarmsRouter(helpers) {
       }
       farms.forEach((f) => (f.isDefault = f.id === farmId));
       db.farms = farms;
+      writeLog(db, {
+        operator: "",
+        action: "farm_set_default",
+        targetType: "farm",
+        targetId: farmId,
+        before: null,
+        after: { isDefault: true },
+        farmId: farmId,
+      });
       await saveDb(db);
       return sendJson(res, 200, farm);
     }

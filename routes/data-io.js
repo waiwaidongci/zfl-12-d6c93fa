@@ -10,6 +10,7 @@ import {
 } from "../utils/csv.js";
 import { generateWarningsFromRecord } from "./warnings.js";
 import { DEFAULT_FARM_ID, getDefaultFarm } from "./farms.js";
+import { writeLog } from "../utils/audit-log.js";
 
 function getFarmIdFromQuery(url) {
   if (!url) return null;
@@ -169,6 +170,16 @@ export function createDataIoRouter(helpers) {
       }
 
       if (imported.length > 0) {
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "record_create",
+          targetType: "record",
+          targetId: imported.map((r) => r.id).join(","),
+          before: null,
+          after: imported,
+          farmId: imported[0]?.farmId || "",
+          meta: { source: "csv_import", count: imported.length },
+        });
         await saveDb(db);
       }
 
