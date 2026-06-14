@@ -97,6 +97,30 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+function filterStateByFarm(db, farmId) {
+  if (!farmId) return db;
+  const scopedCollections = [
+    "parentPools",
+    "ponds",
+    "batches",
+    "records",
+    "transfers",
+    "sales",
+    "costItems",
+    "orders",
+    "shipments",
+    "warnings",
+    "inventories",
+  ];
+  const scopedDb = { ...db };
+  for (const collection of scopedCollections) {
+    if (Array.isArray(db[collection])) {
+      scopedDb[collection] = db[collection].filter((item) => item.farmId === farmId);
+    }
+  }
+  return scopedDb;
+}
+
 const helpers = { loadDb, saveDb, sendJson, body };
 const pondsRouter = createPondsRouter(helpers);
 const batchesRouter = createBatchesRouter(helpers);
@@ -117,7 +141,8 @@ async function routeApi(req, res, url, method) {
   const db = await loadDb();
 
   if (method === "GET" && pathname === "/api/state") {
-    return sendJson(res, 200, db);
+    const farmId = url.searchParams.get("farmId");
+    return sendJson(res, 200, filterStateByFarm(db, farmId));
   }
 
   const result1 = await pondsRouter(req, res, pathname, method);
