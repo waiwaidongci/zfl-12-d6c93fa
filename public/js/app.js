@@ -55,6 +55,8 @@ const forms = {
     '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><div class="spacer"></div><button type="button" class="secondary" id="quickSaleBtn">快速销售（旧模式）</button><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
   shipment:
     '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
+  dataio:
+    '<h2>数据导入导出</h2><div class="dataio-section"><h3>导出数据</h3><p class="meta">将系统数据导出为 CSV 文件下载，可用于备份或离线处理</p><div class="dataio-export-btns"><button type="button" class="dataio-export-btn" data-export="batches">导出批次</button><button type="button" class="dataio-export-btn" data-export="records">导出每日记录</button><button type="button" class="dataio-export-btn" data-export="transfers">导出分池合池</button><button type="button" class="dataio-export-btn" data-export="sales">导出销售记录</button></div></div><div class="dataio-section"><h3>导入每日水质投喂记录</h3><div class="dataio-field-info" style="margin-top:8px;padding:10px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><p class="meta" style="margin:0 0 6px;"><strong>必填列：</strong>batchId（批次号）、date（日期 YYYY-MM-DD）、temperature（水温℃）、salinity（盐度）、oxygen（溶氧mg/L）、feed（投喂量kg）、mortality（死亡率%）</p><p class="meta" style="margin:0 0 6px;"><strong>选填列：</strong>poolId（池号）、abnormal（异常情况，默认为"无"）</p><p class="meta" style="margin:0;"><strong>说明：</strong>系统会在导入前校验字段缺失、批次不存在、数值非法和重复日期，确认后才会写入 data/hatchery.json。可点击下方「下载模板」获取包含示例的 CSV 模板文件。</p></div><div class="dataio-import-area" style="margin-top:10px;"><input type="file" id="dataioFileInput" accept=".csv" /><button type="button" id="dataioPreviewBtn" disabled>预检导入</button><button type="button" id="dataioDownloadTemplate">下载模板</button><a href="/examples/records_template.csv" download target="_blank" style="margin-left:8px;font-size:13px;color:var(--blue);">查看示例文件 ↗</a></div><div id="dataioPreviewResult" class="hidden"></div></div>',
 };
 
 let db = {};
@@ -2173,6 +2175,171 @@ function renderWarningBanner() {
   });
 }
 
+let dataioPendingRecords = [];
+
+function bindDataIoEvents() {
+  dataioPendingRecords = [];
+  const fileInput = document.getElementById("dataioFileInput");
+  const previewBtn = document.getElementById("dataioPreviewBtn");
+  const templateBtn = document.getElementById("dataioDownloadTemplate");
+  const previewResult = document.getElementById("dataioPreviewResult");
+
+  document.querySelectorAll(".dataio-export-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const type = btn.dataset.export;
+      window.open("/api/export/" + type, "_blank");
+    };
+  });
+
+  fileInput.onchange = () => {
+    previewBtn.disabled = !fileInput.files.length;
+    previewResult.classList.add("hidden");
+    dataioPendingRecords = [];
+  };
+
+  templateBtn.onclick = () => {
+    const lines = [
+      "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal",
+      "# 必填字段说明：batchId=批次号, date=日期(YYYY-MM-DD), temperature=水温(℃), salinity=盐度, oxygen=溶氧(mg/L), feed=投喂量(kg), mortality=死亡率(%)",
+      "# 选填字段说明：poolId=池号, abnormal=异常情况(默认为'无')",
+      "B-260601,2026-06-14,P-03,28.0,22,6.2,20,0.5,无",
+      "B-260601,2026-06-15,P-03,27.8,21.5,6.0,19,0.3,无",
+      "B-260601,2026-06-16,P-03,27.5,22.5,5.8,21,0.4,无",
+      "B-260601,2026-06-17,P-03,28.1,22.0,5.9,20.5,0.3,少量浮头",
+      "B-260601,2026-06-18,P-03,27.9,21.8,6.1,20,0.2,无",
+    ];
+    const csv = lines.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "records_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  previewBtn.onclick = async () => {
+    if (!fileInput.files.length) return;
+    const file = fileInput.files[0];
+    const csv = await file.text();
+    try {
+      const result = await api("/api/import/records/preview", {
+        method: "POST",
+        body: JSON.stringify({ csv }),
+      });
+      dataioPendingRecords = result.validRows || [];
+      renderDataIoPreview(result);
+    } catch (err) {
+      previewResult.classList.remove("hidden");
+      previewResult.innerHTML = `<div class="dataio-error">预检失败：${err.message}</div>`;
+    }
+  };
+}
+
+function renderDataIoPreview(result) {
+  const previewResult = document.getElementById("dataioPreviewResult");
+  previewResult.classList.remove("hidden");
+
+  const errorTypeLabels = {
+    missing_field: "字段缺失",
+    batch_not_found: "批次不存在",
+    invalid_number: "数值非法",
+    invalid_format: "格式错误",
+    duplicate_existing: "重复日期",
+    duplicate_in_file: "文件内重复",
+  };
+
+  let html = '<div class="dataio-preview-summary">';
+  html += `<div class="dataio-stat"><span>总行数</span><strong>${result.totalRows}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-success"><span>有效行</span><strong>${result.validCount}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-error"><span>错误行</span><strong>${result.errorCount}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-warn"><span>警告</span><strong>${result.warningCount}</strong></div>`;
+  html += "</div>";
+
+  if (result.errors.length > 0) {
+    html += '<div class="dataio-errors-section"><h4>错误详情</h4><div class="dataio-error-list">';
+    result.errors.forEach((e) => {
+      const typeLabel = errorTypeLabels[e.type] || e.type;
+      html += `<div class="dataio-error-item dataio-error-type-${e.type}"><span class="dataio-error-type">${typeLabel}</span><span class="dataio-error-msg">${e.message}</span></div>`;
+    });
+    html += "</div></div>";
+  }
+
+  if (result.warnings.length > 0) {
+    html += '<div class="dataio-warnings-section"><h4>警告详情</h4><div class="dataio-warning-list">';
+    result.warnings.forEach((w) => {
+      const typeLabel = errorTypeLabels[w.type] || w.type;
+      html += `<div class="dataio-warning-item"><span class="dataio-error-type">${typeLabel}</span><span class="dataio-error-msg">${w.message}</span></div>`;
+    });
+    html += "</div></div>";
+  }
+
+  if (result.preview.length > 0) {
+    html += '<div class="dataio-preview-section"><h4>有效数据预览（最多20行）</h4>';
+    html += '<div class="dataio-preview-table-wrap"><table class="dataio-preview-table"><thead><tr>';
+    const cols = ["batchId", "date", "poolId", "temperature", "salinity", "oxygen", "feed", "mortality", "abnormal"];
+    const colLabels = ["批次", "日期", "池号", "水温", "盐度", "溶氧", "投喂kg", "死亡率%", "异常"];
+    cols.forEach((_, i) => { html += `<th>${colLabels[i]}</th>`; });
+    html += "</tr></thead><tbody>";
+    result.preview.forEach((row) => {
+      html += "<tr>";
+      cols.forEach((c) => { html += `<td>${row[c] != null ? row[c] : ""}</td>`; });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div></div>";
+  }
+
+  if (result.validCount > 0) {
+    html += '<div class="dataio-confirm-area">';
+    html += `<button type="button" id="dataioConfirmBtn" class="dataio-confirm-btn">确认导入 ${result.validCount} 条记录</button>`;
+    html += '<button type="button" id="dataioCancelBtn" class="dataio-cancel-btn">取消</button>';
+    html += "</div>";
+  }
+
+  previewResult.innerHTML = html;
+
+  const confirmBtn = document.getElementById("dataioConfirmBtn");
+  const cancelBtn = document.getElementById("dataioCancelBtn");
+
+  if (confirmBtn) {
+    confirmBtn.onclick = async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "导入中...";
+      try {
+        const importResult = await api("/api/import/records/confirm", {
+          method: "POST",
+          body: JSON.stringify({ records: dataioPendingRecords }),
+        });
+        dataioPendingRecords = [];
+        let msg = `<div class="dataio-success">导入完成：成功 <strong>${importResult.importedCount}</strong> 条，跳过 <strong>${importResult.skippedCount}</strong> 条${importResult.warningsGenerated > 0 ? "，自动生成预警 <strong>" + importResult.warningsGenerated + "</strong> 条" : ""}`;
+        if (importResult.skippedCount > 0) {
+          msg += "<div style='margin-top:8px;font-size:12px;'>跳过详情：" + importResult.skipped.map((s) => s.batchId + " " + s.date + "（" + s.reason + "）").join("；") + "</div>";
+        }
+        msg += `<div style='margin-top:10px;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button></div></div>`;
+        previewResult.innerHTML = msg;
+        document.getElementById("dataioFileInput").value = "";
+        document.getElementById("dataioPreviewBtn").disabled = true;
+        await load();
+        const goBtn = document.getElementById("dataioGoRecordBtn");
+        if (goBtn) goBtn.onclick = () => setTab("record");
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "确认导入";
+        alert("导入失败：" + err.message);
+      }
+    };
+  }
+
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      previewResult.classList.add("hidden");
+      dataioPendingRecords = [];
+      document.getElementById("dataioFileInput").value = "";
+      document.getElementById("dataioPreviewBtn").disabled = true;
+    };
+  }
+}
+
 function setTab(tab) {
   activeTab = tab;
   tabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -2182,6 +2349,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
@@ -2195,6 +2363,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
@@ -2209,6 +2378,7 @@ function setTab(tab) {
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.remove("hidden");
     inventoryContainer.innerHTML = forms[tab];
     fillSelects();
@@ -2220,6 +2390,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
@@ -2233,6 +2404,7 @@ function setTab(tab) {
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const warningContainer = document.getElementById("warningContainer");
     warningContainer.classList.remove("hidden");
@@ -2248,6 +2420,7 @@ function setTab(tab) {
     document.getElementById("costContainer").classList.add("hidden");
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const orderContainer = document.getElementById("orderContainer");
     orderContainer.classList.remove("hidden");
@@ -2270,6 +2443,22 @@ function setTab(tab) {
     fillSelects();
     renderShipments();
     bindShipmentEvents();
+  } else if (tab === "dataio") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const dataioContainer = document.getElementById("dataioContainer");
+    dataioContainer.classList.remove("hidden");
+    dataioContainer.innerHTML = forms[tab];
+    fillSelects();
+    bindDataIoEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
@@ -2279,6 +2468,8 @@ function setTab(tab) {
     document.getElementById("warningContainer").classList.add("hidden");
     document.getElementById("orderContainer").classList.add("hidden");
     document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
@@ -2335,6 +2526,8 @@ async function load() {
   } else if (activeTab === "shipment") {
     renderShipments();
     bindShipmentEvents();
+  } else if (activeTab === "dataio") {
+    bindDataIoEvents();
   } else {
     renderTrace();
     if (activeTab === "sale") {
@@ -2348,7 +2541,7 @@ batchSelect.onchange = renderTrace;
 document.querySelector("#reload").onclick = load;
 form.onsubmit = async (event) => {
   event.preventDefault();
-  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost" || activeTab === "warning") return;
+  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost" || activeTab === "warning" || activeTab === "dataio") return;
   const data = Object.fromEntries(new FormData(form).entries());
   const path =
     activeTab === "record"

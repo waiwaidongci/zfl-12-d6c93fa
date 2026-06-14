@@ -1303,3 +1303,244 @@ button.tiny {
   background: #fafafa;
   opacity: 0.85;
 }
+
+.dataio-section {
+  margin-bottom: 18px;
+}
+
+.dataio-section h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--blue);
+}
+
+.dataio-export-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dataio-export-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+  transition: background 0.15s;
+}
+
+.dataio-export-btn:hover {
+  background: #e8f0ef;
+}
+
+.dataio-import-area {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.dataio-import-area input[type="file"] {
+  font-size: 13px;
+}
+
+.dataio-import-area button,
+.dataio-import-area button.secondary {
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.dataio-import-area button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dataio-preview-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.dataio-stat {
+  background: #f0f4f3;
+  padding: 8px 14px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.dataio-stat span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dataio-stat strong {
+  font-size: 20px;
+}
+
+.dataio-stat-success strong {
+  color: var(--green);
+}
+
+.dataio-stat-error strong {
+  color: var(--warn);
+}
+
+.dataio-stat-warn strong {
+  color: var(--yellow);
+}
+
+.dataio-errors-section,
+.dataio-warnings-section {
+  margin-bottom: 12px;
+}
+
+.dataio-errors-section h4,
+.dataio-warnings-section h4 {
+  font-size: 14px;
+  margin: 0 0 6px;
+  color: var(--warn);
+}
+
+.dataio-warnings-section h4 {
+  color: var(--yellow);
+}
+
+.dataio-error-list,
+.dataio-warning-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.dataio-error-item,
+.dataio-warning-item {
+  display: flex;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dataio-error-item:last-child,
+.dataio-warning-item:last-child {
+  border-bottom: none;
+}
+
+.dataio-error-type {
+  background: #fde8e4;
+  color: var(--warn);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.dataio-warning-item .dataio-error-type {
+  background: #fef3cd;
+  color: #856404;
+}
+
+.dataio-error-msg {
+  color: var(--ink);
+}
+
+.dataio-preview-section h4 {
+  font-size: 14px;
+  margin: 0 0 6px;
+  color: var(--blue);
+}
+
+.dataio-preview-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.dataio-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dataio-preview-table th {
+  background: #eef5f4;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.dataio-preview-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dataio-confirm-area {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.dataio-confirm-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 6px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dataio-confirm-btn:hover {
+  opacity: 0.9;
+}
+
+.dataio-confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dataio-cancel-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dataio-cancel-btn:hover {
+  background: #f0f0f0;
+}
+
+.dataio-error {
+  padding: 12px;
+  background: #fde8e4;
+  border: 1px solid #e8a99c;
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.dataio-success {
+  padding: 12px;
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 14px;
+}
