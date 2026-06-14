@@ -174,6 +174,14 @@ export const seedData = {
       note: "蟹苗主要客户",
     },
   ],
+  warnings: [],
+  warningThresholds: {
+    temperature: { yellowMin: 20, yellowMax: 32, redMin: 18, redMax: 35 },
+    salinity: { yellowMin: 15, yellowMax: 30, redMin: 10, redMax: 35 },
+    oxygen: { yellowMax: 4.5, redMax: 3 },
+    mortality: { yellowMin: 2, redMin: 5 },
+    abnormalKeywords: ["死苗", "变色", "发病", "浮头", "白斑", "红体", "溃烂", "停食", "狂游", "沉底"],
+  },
 };
 
 export function getInitialSeed() {

@@ -8,6 +8,18 @@ const POND_STATUS = {
 const POND_PURPOSES = ["虾苗培育", "蟹苗培育", "贝苗培育", "鱼种培育", "暂养池", "其他"];
 const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
 
+const WARNING_LEVELS = {
+  red: { label: "红色预警", class: "warning-red" },
+  yellow: { label: "黄色预警", class: "warning-yellow" },
+};
+
+const WARNING_STATUS = {
+  pending: { label: "待处理", class: "status-maintenance" },
+  processing: { label: "处理中", class: "status-cleaning" },
+  resolved: { label: "已解决", class: "status-active" },
+  ignored: { label: "已忽略", class: "status-idle" },
+};
+
 const forms = {
   record:
     '<h2>每日水质和投喂</h2><label>批次</label><select name="batchId"></select><label>日期</label><input name="date" type="date" required><label>池号</label><select name="poolId"></select><label>水温</label><input name="temperature" type="number" step="0.1" required><label>盐度</label><input name="salinity" type="number" step="0.1" required><label>溶氧</label><input name="oxygen" type="number" step="0.1" required><label>投喂量kg</label><input name="feed" type="number" step="0.1" required><label>死亡率%</label><input name="mortality" type="number" step="0.1" required><label>异常情况</label><textarea name="abnormal"></textarea><button>保存记录</button>',
@@ -23,6 +35,8 @@ const forms = {
     '<h2>育苗池档案</h2><div class="pond-toolbar"><input id="pondSearch" placeholder="搜索池号或名称..."><select id="pondStatusFilter"><option value="">全部状态</option><option value="active">使用中</option><option value="idle">空闲</option><option value="cleaning">消毒中</option><option value="maintenance">维修中</option></select><div class="spacer"></div><button type="button" id="addPondBtn">+ 新增池子</button></div><div class="pond-stats" id="pondStats"></div><div class="grid" id="pondList"></div>',
   customer:
     '<h2>客户档案</h2><div class="customer-toolbar"><input id="customerSearch" placeholder="搜索客户名称、联系人或地区..."><div class="spacer"></div><button type="button" id="addCustomerBtn">+ 新增客户</button></div><div class="customer-stats" id="customerStats"></div><div class="grid" id="customerList"></div>',
+  warning:
+    '<h2>水质预警中心</h2><div class="warning-toolbar"><select id="warningLevelFilter"><option value="">全部等级</option><option value="red">红色预警</option><option value="yellow">黄色预警</option></select><select id="warningStatusFilter"><option value="">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select><select id="warningBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" class="secondary" id="thresholdConfigBtn">阈值配置</button></div><div class="warning-stats" id="warningStats"></div><div class="grid" id="warningList"></div>',
 };
 
 let db = {};
@@ -161,16 +175,77 @@ async function renderTrace() {
         detail: customerText + "，" + e.count + "尾，收入" + revenue.toFixed(2) + "元，单价" + Number(e.unitPrice).toFixed(4) + "元/尾",
       };
     }),
+    ...(trace.warnings || []).map((e) => ({
+      date: e.date,
+      title: "水质预警",
+      detail:
+        (WARNING_LEVELS[e.level]?.label || e.level) +
+        "：" +
+        (e.reasons || []).join("；") +
+        "（" + (WARNING_STATUS[e.status]?.label || e.status) + "）",
+      warningLevel: e.level,
+      warningId: e.id,
+      warningStatus: e.status,
+      warningHandler: e.handler,
+      warningNote: e.handleNote,
+    })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
   timelineEl.innerHTML = events
     .map(
-      (e) =>
-        `<div class="event"><b>${e.date} · ${e.title}</b><div class="meta ${
-          e.detail.includes("偏低") ? "warning" : ""
-        }">${e.detail}</div></div>`
+      (e) => {
+        let extraHtml = "";
+        if (e.warningId) {
+          const extraParts = [];
+          if (e.warningHandler) extraParts.push(`处理人：${e.warningHandler}`);
+          if (e.warningNote) extraParts.push(`备注：${e.warningNote}`);
+          if (extraParts.length) extraHtml = `<div class="event-warning-extra">${extraParts.join(" · ")}</div>`;
+          return `
+            <div class="event event-warning event-warning-${e.warningLevel} event-warning-status-${e.warningStatus}" data-warning-id="${e.warningId}">
+              <div class="event-warning-header">
+                <b>${e.date} · ${e.title}</b>
+                <span class="status-badge ${WARNING_STATUS[e.warningStatus]?.class || ""}">${WARNING_STATUS[e.warningStatus]?.label || e.warningStatus}</span>
+              </div>
+              <div class="meta ${e.detail.includes("偏低") ? "warning" : ""}">${e.detail}</div>
+              ${extraHtml}
+              <div class="event-warning-actions">
+                ${e.warningStatus === "pending" || e.warningStatus === "processing" ? `<button type="button" class="secondary tiny" data-action="handle-warning">处理预警</button>` : ""}
+              </div>
+            </div>`;
+        }
+        return `<div class="event"><b>${e.date} · ${e.title}</b><div class="meta ${e.detail.includes("偏低") ? "warning" : ""}">${e.detail}</div></div>`;
+      }
     )
     .join("");
+
+  timelineEl.querySelectorAll('[data-action="handle-warning"]').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const warnId = btn.closest(".event-warning").dataset.warningId;
+      const warning = (db.warnings || []).find((w) => w.id === warnId);
+      if (!warning) return;
+      const targetStatus = warning.status === "pending" ? "processing" : "resolved";
+      openWarningHandleModal(warnId, targetStatus);
+    };
+  });
+
+  timelineEl.querySelectorAll(".event-warning").forEach((evt) => {
+    const warnId = evt.dataset.warningId;
+    if (!warnId) return;
+    evt.style.cursor = "pointer";
+    evt.onclick = () => {
+      document.querySelector('[data-tab="warning"]').click();
+      setTimeout(() => {
+        const card = document.querySelector(`.warning-card[data-id="${warnId}"]`);
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" });
+          card.style.boxShadow = "0 0 0 3px #f0c9a0, 0 4px 14px rgba(0,0,0,0.08)";
+          setTimeout(() => { card.style.boxShadow = ""; }, 2500);
+        }
+      }, 200);
+    };
+  });
 }
 
 function statusBadge(status) {
@@ -805,6 +880,451 @@ function bindSaleEvents() {
   }
 }
 
+function renderWarningStats() {
+  const warnings = db.warnings || [];
+  const total = warnings.length;
+  const pending = warnings.filter((w) => w.status === "pending").length;
+  const processing = warnings.filter((w) => w.status === "processing").length;
+  const redCount = warnings.filter((w) => w.level === "red" && w.status === "pending").length;
+  const yellowCount = warnings.filter((w) => w.level === "yellow" && w.status === "pending").length;
+  document.getElementById("warningStats").innerHTML = [
+    ["预警总数", total],
+    ["待处理", pending],
+    ["处理中", processing],
+    ["红色待处理", redCount],
+    ["黄色待处理", yellowCount],
+  ]
+    .map(
+      ([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`
+    )
+    .join("");
+}
+
+function renderWarningList() {
+  const warnings = db.warnings || [];
+  const levelFilter = document.getElementById("warningLevelFilter")?.value || "";
+  const statusFilter = document.getElementById("warningStatusFilter")?.value || "";
+  const batchFilter = document.getElementById("warningBatchFilter")?.value || "";
+  let filtered = [...warnings].sort((a, b) => b.date.localeCompare(a.date));
+  if (levelFilter) filtered = filtered.filter((w) => w.level === levelFilter);
+  if (statusFilter) filtered = filtered.filter((w) => w.status === statusFilter);
+  if (batchFilter) filtered = filtered.filter((w) => w.batchId === batchFilter);
+
+  const list = document.getElementById("warningList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无预警数据，系统会根据每日记录自动生成预警</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered
+    .map((w) => {
+      const levelInfo = WARNING_LEVELS[w.level] || { label: w.level, class: "" };
+      const statusInfo = WARNING_STATUS[w.status] || { label: w.status, class: "" };
+      const reasonsHtml = (w.reasons || []).map((r) => `<div class="warning-reason-item">· ${r}</div>`).join("");
+      const hasHistory = w.handleHistory && w.handleHistory.length > 0;
+      return `
+    <div class="warning-card ${w.level}" data-id="${w.id}">
+      <div class="warning-header">
+        <span class="status-badge ${levelInfo.class}">${levelInfo.label}</span>
+        <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
+        <span class="spacer"></span>
+        <button type="button" class="tiny-btn" data-action="detail" title="查看详情">ⓘ 详情${hasHistory ? `（${w.handleHistory.length}）` : ""}</button>
+      </div>
+      <div class="warning-id">${w.id} · ${w.batchId}${w.poolId ? " · " + w.poolId : ""}</div>
+      <div class="warning-date">${w.date}</div>
+      <div class="warning-reasons">${reasonsHtml}</div>
+      ${w.handler ? `<div class="warning-handle-info"><span class="label">处理人</span><span>${w.handler}</span></div>` : ""}
+      ${w.handleNote ? `<div class="warning-handle-info"><span class="label">处理备注</span><span>${w.handleNote}</span></div>` : ""}
+      ${w.handleDate ? `<div class="warning-handle-info"><span class="label">处理日期</span><span>${w.handleDate}</span></div>` : ""}
+      ${w.autoResolved ? `<div class="warning-handle-info auto-resolved"><span class="label">状态</span><span>系统自动解除</span></div>` : ""}
+      <div class="warning-actions">
+        ${w.status === "pending" ? `<button type="button" data-action="process">开始处理</button>` : ""}
+        ${w.status === "pending" || w.status === "processing" ? `<button type="button" class="secondary" data-action="resolve">标记解决</button>` : ""}
+        ${w.status === "pending" ? `<button type="button" class="danger" data-action="ignore">忽略</button>` : ""}
+        <button type="button" class="secondary" data-action="delete">删除</button>
+      </div>
+    </div>
+  `;
+    })
+    .join("");
+
+  list.querySelectorAll(".warning-card").forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        const action = btn.dataset.action;
+        if (action === "process") {
+          openWarningHandleModal(id, "processing");
+        } else if (action === "resolve") {
+          openWarningHandleModal(id, "resolved");
+        } else if (action === "ignore") {
+          openWarningHandleModal(id, "ignored");
+        } else if (action === "detail") {
+          openWarningDetailModal(id);
+        } else if (action === "delete") {
+          if (!confirm("确定要删除此预警吗？")) return;
+          try {
+            await api("/api/warnings/" + id, { method: "DELETE" });
+            await load();
+            renderWarnings();
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+      };
+    });
+  });
+}
+
+async function openWarningDetailModal(warningId) {
+  let detail;
+  try {
+    detail = await api("/api/warnings/" + warningId);
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  const w = detail.warning;
+  const levelInfo = WARNING_LEVELS[w.level] || { label: w.level || "-", class: "" };
+  const statusInfo = WARNING_STATUS[w.status] || { label: w.status, class: "" };
+  const history = detail.handleHistory || w.handleHistory || [];
+  const historyHtml = history.length
+    ? history
+        .sort((a, b) => new Date(b.at) - new Date(a.at))
+        .map((h, idx) => {
+          const fromLabel = WARNING_STATUS[h.fromStatus]?.label || h.fromStatus || "-";
+          const toLabel = WARNING_STATUS[h.toStatus]?.label || h.toStatus;
+          return `
+            <div class="history-item">
+              <div class="history-dot"></div>
+              <div class="history-body">
+                <div class="history-title">
+                  <span class="status-badge" style="background:#e6eef0;color:#60727a;font-size:10px;padding:1px 6px;">${fromLabel}</span>
+                  <span class="history-arrow">→</span>
+                  <span class="status-badge ${WARNING_STATUS[h.toStatus]?.class || ""}">${toLabel}</span>
+                  <span class="history-time">${new Date(h.at).toLocaleString("zh-CN")}</span>
+                </div>
+                ${h.handler ? `<div class="history-meta"><strong>操作人：</strong>${h.handler}</div>` : ""}
+                ${h.note ? `<div class="history-meta"><strong>备注：</strong>${h.note}</div>` : ""}
+              </div>
+            </div>
+          `;
+        })
+        .join("")
+    : `<div class="meta" style="padding:12px;text-align:center;">暂无处理历史</div>`;
+
+  const batch = detail.relatedBatch;
+  const pool = detail.relatedPool;
+  const rec = detail.relatedRecord;
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>预警详情 - ${w.id}</h2>
+      <div class="detail-grid">
+        <div class="detail-section">
+          <h3>基本信息</h3>
+          <div class="detail-row"><span class="label">预警等级</span><span class="status-badge ${levelInfo.class}">${levelInfo.label}</span></div>
+          <div class="detail-row"><span class="label">处理状态</span><span class="status-badge ${statusInfo.class}">${statusInfo.label}</span></div>
+          <div class="detail-row"><span class="label">触发日期</span><span>${w.date}</span></div>
+          <div class="detail-row"><span class="label">创建时间</span><span>${w.createdAt ? new Date(w.createdAt).toLocaleString("zh-CN") : "-"}</span></div>
+          ${w.processingAt ? `<div class="detail-row"><span class="label">开始处理</span><span>${new Date(w.processingAt).toLocaleString("zh-CN")}</span></div>` : ""}
+          ${w.resolvedAt ? `<div class="detail-row"><span class="label">解决时间</span><span>${new Date(w.resolvedAt).toLocaleString("zh-CN")}</span></div>` : ""}
+          ${w.autoResolved ? `<div class="detail-row auto-resolved"><span class="label">解除方式</span><span>系统自动解除（数据更新后阈值不再触发）</span></div>` : ""}
+        </div>
+        <div class="detail-section">
+          <h3>关联信息</h3>
+          <div class="detail-row"><span class="label">关联批次</span><span>${w.batchId}${batch ? "（" + batch.species + " · " + batch.status + "）" : ""}</span></div>
+          <div class="detail-row"><span class="label">关联池号</span><span>${w.poolId || "-"}${pool ? "（" + pool.name + "）" : ""}</span></div>
+          <div class="detail-row"><span class="label">关联记录</span><span>${w.recordId || "-"}</span></div>
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>触发原因</h3>
+        <div class="warning-reasons">
+          ${(w.reasons || []).map((r) => `<div class="warning-reason-item">· ${r}</div>`).join("")}
+        </div>
+      </div>
+      ${rec ? `
+      <div class="detail-section">
+        <h3>关联每日记录数据</h3>
+        <div class="related-record-grid">
+          <div class="detail-row"><span class="label">水温</span><span>${rec.temperature}℃</span></div>
+          <div class="detail-row"><span class="label">盐度</span><span>${rec.salinity}</span></div>
+          <div class="detail-row"><span class="label">溶氧</span><span>${rec.oxygen}</span></div>
+          <div class="detail-row"><span class="label">投喂量</span><span>${rec.feed}kg</span></div>
+          <div class="detail-row"><span class="label">死亡率</span><span>${rec.mortality}%</span></div>
+          <div class="detail-row"><span class="label">异常情况</span><span>${rec.abnormal || "-"}</span></div>
+        </div>
+      </div>
+      ` : ""}
+      ${w.handler || w.handleNote ? `
+      <div class="detail-section">
+        <h3>当前处理信息</h3>
+        ${w.handler ? `<div class="detail-row"><span class="label">处理人</span><span>${w.handler}</span></div>` : ""}
+        ${w.handleNote ? `<div class="detail-row"><span class="label">处理备注</span><span>${w.handleNote}</span></div>` : ""}
+        ${w.handleDate ? `<div class="detail-row"><span class="label">处理日期</span><span>${w.handleDate}</span></div>` : ""}
+      </div>
+      ` : ""}
+      <div class="detail-section">
+        <h3>处理历史时间线</h3>
+        <div class="history-timeline">${historyHtml}</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeDetailBtn">关闭</button>
+        ${w.status === "pending" ? `<button type="button" id="startProcessBtn">开始处理</button>` : ""}
+        ${w.status === "pending" || w.status === "processing" ? `<button type="button" class="secondary" id="markResolveBtn">标记解决</button>` : ""}
+        ${w.status === "pending" ? `<button type="button" class="danger" id="ignoreBtn">忽略</button>` : ""}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#closeDetailBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  if (modal.querySelector("#startProcessBtn")) {
+    modal.querySelector("#startProcessBtn").onclick = () => {
+      modal.remove();
+      openWarningHandleModal(warningId, "processing");
+    };
+  }
+  if (modal.querySelector("#markResolveBtn")) {
+    modal.querySelector("#markResolveBtn").onclick = () => {
+      modal.remove();
+      openWarningHandleModal(warningId, "resolved");
+    };
+  }
+  if (modal.querySelector("#ignoreBtn")) {
+    modal.querySelector("#ignoreBtn").onclick = () => {
+      modal.remove();
+      openWarningHandleModal(warningId, "ignored");
+    };
+  }
+}
+
+function renderWarnings() {
+  const batchFilter = document.getElementById("warningBatchFilter");
+  if (batchFilter && db.batches) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      db.batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    batchFilter.value = currentVal;
+  }
+  renderWarningStats();
+  renderWarningList();
+}
+
+function openWarningHandleModal(warningId, targetStatus) {
+  const warning = (db.warnings || []).find((w) => w.id === warningId);
+  if (!warning) return;
+  const statusLabel = WARNING_STATUS[targetStatus]?.label || targetStatus;
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${statusLabel} - ${warning.id}</h2>
+      <div class="warning-handle-summary">
+        <div class="row"><span class="label">预警等级</span><span class="status-badge ${WARNING_LEVELS[warning.level]?.class || ""}">${WARNING_LEVELS[warning.level]?.label || warning.level}</span></div>
+        <div class="row"><span class="label">关联批次</span><span>${warning.batchId}</span></div>
+        <div class="row"><span class="label">触发日期</span><span>${warning.date}</span></div>
+        <div class="row"><span class="label">触发原因</span><span>${(warning.reasons || []).join("；")}</span></div>
+      </div>
+      <form id="warningHandleForm">
+        <label>处理人</label>
+        <input name="handler" required placeholder="输入处理人姓名">
+        <label>处理备注</label>
+        <textarea name="handleNote" placeholder="详细描述处理措施和结果">${warning.handleNote || ""}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">确认${statusLabel}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#warningHandleForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    try {
+      await api("/api/warnings/" + warningId + "/handle", {
+        method: "PATCH",
+        body: JSON.stringify({ status: targetStatus, handler: data.handler, handleNote: data.handleNote }),
+      });
+      modal.remove();
+      await load();
+      renderWarnings();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+function openThresholdConfigModal() {
+  const thresholds = db.warningThresholds || {};
+  const t = thresholds.temperature || {};
+  const s = thresholds.salinity || {};
+  const o = thresholds.oxygen || {};
+  const m = thresholds.mortality || {};
+  const keywords = (thresholds.abnormalKeywords || []).join("、");
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>预警阈值配置</h2>
+      <form id="thresholdForm">
+        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">水温阈值（℃）</h3>
+        <label>黄色预警下限</label><input name="temperature.yellowMin" type="number" step="0.1" value="${t.yellowMin ?? 20}">
+        <label>黄色预警上限</label><input name="temperature.yellowMax" type="number" step="0.1" value="${t.yellowMax ?? 32}">
+        <label>红色预警下限</label><input name="temperature.redMin" type="number" step="0.1" value="${t.redMin ?? 18}">
+        <label>红色预警上限</label><input name="temperature.redMax" type="number" step="0.1" value="${t.redMax ?? 35}">
+        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">盐度阈值</h3>
+        <label>黄色预警下限</label><input name="salinity.yellowMin" type="number" step="0.1" value="${s.yellowMin ?? 15}">
+        <label>黄色预警上限</label><input name="salinity.yellowMax" type="number" step="0.1" value="${s.yellowMax ?? 30}">
+        <label>红色预警下限</label><input name="salinity.redMin" type="number" step="0.1" value="${s.redMin ?? 10}">
+        <label>红色预警上限</label><input name="salinity.redMax" type="number" step="0.1" value="${s.redMax ?? 35}">
+        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">溶氧阈值（mg/L）</h3>
+        <label>黄色预警上限（低于此值）</label><input name="oxygen.yellowMax" type="number" step="0.1" value="${o.yellowMax ?? 4.5}">
+        <label>红色预警上限（低于此值）</label><input name="oxygen.redMax" type="number" step="0.1" value="${o.redMax ?? 3}">
+        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">死亡率阈值（%）</h3>
+        <label>黄色预警下限</label><input name="mortality.yellowMin" type="number" step="0.1" value="${m.yellowMin ?? 2}">
+        <label>红色预警下限</label><input name="mortality.redMin" type="number" step="0.1" value="${m.redMin ?? 5}">
+        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">异常文本关键词</h3>
+        <label>关键词（用中文顿号「、」分隔）</label><textarea name="abnormalKeywords">${keywords}</textarea>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">保存配置</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#thresholdForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target).entries());
+    const parseNum = (v) => (v !== "" && v != null ? Number(v) : undefined);
+    const payload = {
+      temperature: {
+        yellowMin: parseNum(data["temperature.yellowMin"]),
+        yellowMax: parseNum(data["temperature.yellowMax"]),
+        redMin: parseNum(data["temperature.redMin"]),
+        redMax: parseNum(data["temperature.redMax"]),
+      },
+      salinity: {
+        yellowMin: parseNum(data["salinity.yellowMin"]),
+        yellowMax: parseNum(data["salinity.yellowMax"]),
+        redMin: parseNum(data["salinity.redMin"]),
+        redMax: parseNum(data["salinity.redMax"]),
+      },
+      oxygen: {
+        yellowMax: parseNum(data["oxygen.yellowMax"]),
+        redMax: parseNum(data["oxygen.redMax"]),
+      },
+      mortality: {
+        yellowMin: parseNum(data["mortality.yellowMin"]),
+        redMin: parseNum(data["mortality.redMin"]),
+      },
+      abnormalKeywords: data.abnormalKeywords
+        ? data.abnormalKeywords.split("、").map((s) => s.trim()).filter(Boolean)
+        : [],
+    };
+    try {
+      await api("/api/warnings/thresholds", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      modal.remove();
+      await load();
+      renderWarnings();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+function bindWarningEvents() {
+  const levelFilter = document.getElementById("warningLevelFilter");
+  const statusFilter = document.getElementById("warningStatusFilter");
+  const batchFilter = document.getElementById("warningBatchFilter");
+  const thresholdBtn = document.getElementById("thresholdConfigBtn");
+  if (levelFilter) levelFilter.onchange = renderWarningList;
+  if (statusFilter) statusFilter.onchange = renderWarningList;
+  if (batchFilter) batchFilter.onchange = renderWarningList;
+  if (thresholdBtn) thresholdBtn.onclick = (e) => { e.preventDefault(); openThresholdConfigModal(); };
+}
+
+function renderWarningBanner() {
+  const warnings = db.warnings || [];
+  const pending = warnings.filter((w) => w.status === "pending" || w.status === "processing");
+  const banner = document.getElementById("warningBanner");
+  if (!pending.length) {
+    banner.classList.add("hidden");
+    banner.innerHTML = "";
+    return;
+  }
+  const redPending = pending.filter((w) => w.level === "red");
+  const yellowPending = pending.filter((w) => w.level === "yellow");
+  const processingCount = pending.filter((w) => w.status === "processing").length;
+  banner.classList.remove("hidden");
+
+  const quickList = pending
+    .sort((a, b) => {
+      if (a.level === "red" && b.level !== "red") return -1;
+      if (a.level !== "red" && b.level === "red") return 1;
+      return b.date.localeCompare(a.date);
+    })
+    .slice(0, 3)
+    .map((w) => {
+      const levelInfo = WARNING_LEVELS[w.level] || { label: w.level, class: "" };
+      const statusInfo = WARNING_STATUS[w.status] || { label: w.status, class: "" };
+      return `
+        <div class="warning-banner-item" data-warn-id="${w.id}">
+          <span class="status-badge ${levelInfo.class}">${levelInfo.label}</span>
+          <span class="status-badge ${statusInfo.class}" style="font-size:10px;padding:1px 6px;">${statusInfo.label}</span>
+          <span class="warning-banner-item-batch">${w.batchId}</span>
+          <span class="warning-banner-item-text">${(w.reasons || [])[0] || ""}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  banner.innerHTML = `
+    <div class="warning-banner-main" onclick="document.querySelector('[data-tab=warning]').click()">
+      <span class="warning-banner-icon">⚠</span>
+      <span class="warning-banner-title">
+        水质预警：<strong class="warn-red">${redPending.length}</strong> 条红色、
+        <strong class="warn-yellow">${yellowPending.length}</strong> 条黄色待处理
+        ${processingCount > 0 ? `，${processingCount} 条处理中` : ""}
+      </span>
+      <span class="warning-banner-link">预警中心 →</span>
+    </div>
+    <div class="warning-banner-list">
+      ${quickList}
+    </div>
+  `;
+
+  banner.querySelectorAll(".warning-banner-item").forEach((item) => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      const warnId = item.dataset.warnId;
+      document.querySelector('[data-tab="warning"]').click();
+      setTimeout(() => {
+        const card = document.querySelector(`.warning-card[data-id="${warnId}"]`);
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" });
+          card.style.boxShadow = "0 0 0 3px #f0c9a0, 0 4px 14px rgba(0,0,0,0.08)";
+          setTimeout(() => { card.style.boxShadow = ""; }, 2500);
+        }
+      }, 200);
+    };
+  });
+}
+
 function setTab(tab) {
   activeTab = tab;
   tabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -813,6 +1333,7 @@ function setTab(tab) {
     form.classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
     pondContainer.innerHTML = forms[tab];
@@ -824,6 +1345,7 @@ function setTab(tab) {
     form.classList.add("hidden");
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
     customerContainer.innerHTML = forms[tab];
@@ -835,18 +1357,32 @@ function setTab(tab) {
     form.classList.add("hidden");
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
     costContainer.innerHTML = forms[tab];
     fillSelects();
     renderCosts();
     bindCostEvents();
+  } else if (tab === "warning") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    const warningContainer = document.getElementById("warningContainer");
+    warningContainer.classList.remove("hidden");
+    warningContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderWarnings();
+    bindWarningEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
     document.getElementById("pondContainer").classList.add("hidden");
     document.getElementById("customerContainer").classList.add("hidden");
     document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
       bindSaleEvents();
@@ -859,12 +1395,15 @@ async function load() {
   db = await api("/api/state");
   if (!db.customers) db.customers = [];
   if (!db.costItems) db.costItems = [];
+  if (!db.warnings) db.warnings = [];
+  if (!db.warningThresholds) db.warningThresholds = {};
   try {
     const enrichedCustomers = await api("/api/customers");
     db.customers = enrichedCustomers;
   } catch (e) {
   }
   fillSelects();
+  renderWarningBanner();
   if (activeTab === "pond") {
     renderPonds();
     bindPondEvents();
@@ -874,6 +1413,9 @@ async function load() {
   } else if (activeTab === "cost") {
     renderCosts();
     bindCostEvents();
+  } else if (activeTab === "warning") {
+    renderWarnings();
+    bindWarningEvents();
   } else {
     renderTrace();
     if (activeTab === "sale") {
@@ -887,7 +1429,7 @@ batchSelect.onchange = renderTrace;
 document.querySelector("#reload").onclick = load;
 form.onsubmit = async (event) => {
   event.preventDefault();
-  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost") return;
+  if (activeTab === "pond" || activeTab === "customer" || activeTab === "cost" || activeTab === "warning") return;
   const data = Object.fromEntries(new FormData(form).entries());
   const path =
     activeTab === "record"
@@ -908,9 +1450,14 @@ form.onsubmit = async (event) => {
     if (activeTab === "sale" && !data.customerId) {
       delete data.customerId;
     }
-    await api(path, { method: "POST", body: JSON.stringify(data) });
+    const result = await api(path, { method: "POST", body: JSON.stringify(data) });
     form.reset();
     await load();
+    if (activeTab === "record" && result.warnings && result.warnings.length > 0) {
+      const count = result.warnings.length;
+      const levels = result.warnings.map((w) => WARNING_LEVELS[w.level]?.label || w.level).join("、");
+      alert("已自动生成 " + count + " 条预警：" + levels);
+    }
   } catch (err) {
     alert(err.message);
   }
