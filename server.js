@@ -18,6 +18,7 @@ import { createShipmentsRouter } from "./routes/shipments.js";
 import { createDataIoRouter } from "./routes/data-io.js";
 import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm } from "./routes/farms.js";
 import { createAuditLogRouter } from "./routes/audit-log.js";
+import { createLineageRouter, migrateTransfersToLineage } from "./routes/lineage.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -46,6 +47,17 @@ async function loadDb() {
     dbNeedsSave = false;
   }
   const db = JSON.parse(await readFile(dbPath, "utf8"));
+
+  if (!db.lineages) {
+    db.lineages = [];
+    dbNeedsSave = true;
+  }
+
+  const migratedLineageCount = migrateTransfersToLineage(db);
+  if (migratedLineageCount > 0) {
+    console.log(`迁移了 ${migratedLineageCount} 条 transfer 记录为 lineage 记录`);
+    dbNeedsSave = true;
+  }
 
   const defaultFarm = ensureDefaultFarm(db);
   if (defaultFarm) {
@@ -112,6 +124,7 @@ function filterStateByFarm(db, farmId) {
     "shipments",
     "warnings",
     "inventories",
+    "lineages",
     "opLogs",
   ];
   const scopedDb = { ...db };
@@ -138,6 +151,7 @@ const shipmentsRouter = createShipmentsRouter(helpers);
 const dataIoRouter = createDataIoRouter(helpers);
 const farmsRouter = createFarmsRouter(helpers);
 const auditLogRouter = createAuditLogRouter(helpers);
+const lineageRouter = createLineageRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -189,6 +203,9 @@ async function routeApi(req, res, url, method) {
 
   const result14 = await auditLogRouter(req, res, pathname, method);
   if (result14 !== false) return result14;
+
+  const result15 = await lineageRouter(req, res, pathname, method);
+  if (result15 !== false) return result15;
 
   return false;
 }

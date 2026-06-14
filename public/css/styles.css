@@ -1836,3 +1836,323 @@ button.tiny {
 .auditlog-rollback-item-btn:hover {
   background: #ffeee8;
 }
+
+.lineage-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.lineage-toolbar select {
+  width: auto;
+  min-width: 160px;
+}
+
+.lineage-toolbar .spacer {
+  flex: 1;
+}
+
+.lineage-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.lineage-stats .stat strong {
+  font-size: 18px;
+}
+
+.lineage-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.lineage-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.lineage-card.lineage-type-split {
+  border-left: 4px solid #5a7a52;
+}
+
+.lineage-card.lineage-type-merge {
+  border-left: 4px solid #216778;
+}
+
+.lineage-card.lineage-type-mix {
+  border-left: 4px solid #8b6914;
+}
+
+.lineage-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.lineage-card-date {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.lineage-card-id {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.lineage-card-body {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.lineage-card-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.lineage-section-title {
+  font-size: 12px;
+  color: var(--blue);
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.lineage-batch-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.lineage-batch-id {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lineage-batch-species {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lineage-batch-count {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.lineage-batch-ratio {
+  color: var(--blue);
+  font-size: 11px;
+}
+
+.lineage-batch-pool {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lineage-card-arrow {
+  font-size: 20px;
+  color: var(--muted);
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.lineage-form-section {
+  background: #f7f9f9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.lineage-form-section h3 {
+  font-size: 14px;
+  color: var(--blue);
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lineage-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.lineage-form-row select {
+  flex: 2;
+  min-width: 0;
+}
+
+.lineage-form-row input[type="number"] {
+  flex: 1;
+  min-width: 100px;
+}
+
+.lineage-form-row .lineage-target-pool {
+  flex: 1;
+  min-width: 80px;
+}
+
+.lineage-validation {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.lineage-validation-warn {
+  font-size: 13px;
+  color: #8b6914;
+  padding: 2px 0;
+}
+
+.lineage-graph-container {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafcfc;
+}
+
+.lineage-graph-container svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.lineage-event-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.lineage-source-tag,
+.lineage-target-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lineage-source-tag {
+  background: #e8f5e9;
+  color: #5a7a52;
+}
+
+.lineage-target-tag {
+  background: #e3f2fd;
+  color: #216778;
+}
+
+.lineage-arrow-tag {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 22px;
+}
+
+.event-lineage {
+  background: #f5f9f5;
+}
+
+.event-lineage-split {
+  border-left-color: #5a7a52;
+}
+
+.event-lineage-merge {
+  border-left-color: #216778;
+}
+
+.event-lineage-mix {
+  border-left-color: #8b6914;
+}
+
+.contribution-container {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.contribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contribution-item {
+  padding: 10px;
+  background: #f7f9f9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.contribution-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.contribution-batch {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.contribution-species {
+  color: var(--muted);
+}
+
+.contribution-count {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.contribution-percentage {
+  font-weight: 700;
+  font-size: 16px;
+  margin-left: auto;
+}
+
+.contribution-bar-bg {
+  height: 8px;
+  background: #e6eef0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.contribution-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+@media (max-width: 900px) {
+  .lineage-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .lineage-card-body {
+    flex-direction: column;
+  }
+  .lineage-card-arrow {
+    transform: rotate(90deg);
+  }
+}

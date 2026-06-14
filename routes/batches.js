@@ -70,6 +70,10 @@ export function batchTrace(db, batchId) {
   const inventories = (db.inventories || [])
     .filter((item) => item.batchId === batchId)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const lineages = (db.lineages || []).filter((l) =>
+    l.sources.some((s) => s.batchId === batchId) ||
+    l.targets.some((t) => t.batchId === batchId)
+  ).sort((a, b) => a.date.localeCompare(b.date));
 
   const initialCost = Number(batch.cost || 0);
   const costSummary = calcCostSummary(costItems);
@@ -130,6 +134,7 @@ export function batchTrace(db, batchId) {
     costItems,
     warnings,
     inventories,
+    lineages,
     summary: {
       averageTemperature: avg(records, "temperature"),
       averageOxygen: avg(records, "oxygen"),

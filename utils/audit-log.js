@@ -1,4 +1,4 @@
-const ROLLBACK_BLACKLIST = new Set(["farm_create", "farm_update", "farm_delete", "farm_set_default", "threshold_update", "rollback"]);
+const ROLLBACK_BLACKLIST = new Set(["farm_create", "farm_update", "farm_delete", "farm_set_default", "threshold_update", "rollback", "lineage_create", "lineage_delete"]);
 const ROLLBACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function summarize(obj) {
@@ -90,6 +90,7 @@ function getCollection(db, targetType) {
     customer: "customers",
     farm: "farms",
     threshold: "warningThresholds",
+    lineage: "lineages",
   };
   return map[targetType] || targetType;
 }

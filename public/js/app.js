@@ -61,6 +61,8 @@ const forms = {
     '<h2>场区管理</h2><div class="farm-toolbar"><div class="spacer"></div><button type="button" id="addFarmBtn">+ 新增场区</button></div><div class="farm-stats" id="farmStats"></div><div class="grid" id="farmList"></div>',
   auditlog:
     '<h2>操作日志</h2><div class="auditlog-toolbar"><select id="auditlogActionFilter"><option value="">全部操作</option></select><select id="auditlogTargetFilter"><option value="">全部对象</option></select><input id="auditlogOperatorSearch" placeholder="操作者..."><input id="auditlogStartDate" type="date" placeholder="开始日期"><input id="auditlogEndDate" type="date" placeholder="结束日期"><div class="spacer"></div><button type="button" id="auditlogRollbackBtn" class="secondary" style="background:#a84e35;color:#fff;">↩ 撤销最近操作</button></div><div class="auditlog-stats" id="auditlogStats"></div><div class="auditlog-list" id="auditlogList"></div><div class="auditlog-pagination" id="auditlogPagination"></div>',
+  lineage:
+    '<h2>批次血缘追踪</h2><div class="lineage-toolbar"><select id="lineageTypeFilter"><option value="">全部类型</option><option value="split">批次拆分</option><option value="merge">批次合并</option><option value="mix">混养分配</option></select><select id="lineageBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addLineageBtn">+ 新增血缘</button></div><div class="lineage-stats" id="lineageStats"></div><div class="lineage-list" id="lineageList"></div>',
 };
 
 let db = {};
@@ -143,7 +145,7 @@ function fillSelects() {
   if (!batchSelect.value && batches[0]) batchSelect.value = batches[0].id;
 
   const batchFilterOptions = batches.map((b) => `<option value="${b.id}">${b.id}</option>`).join("");
-  document.querySelectorAll("#inventoryBatchFilter, #costBatchFilter, #warningBatchFilter, #orderBatchFilter, #shipmentBatchFilter").forEach((s) => {
+  document.querySelectorAll("#inventoryBatchFilter, #costBatchFilter, #warningBatchFilter, #orderBatchFilter, #shipmentBatchFilter, #lineageBatchFilter").forEach((s) => {
     const currentValue = s.value;
     s.innerHTML = '<option value="">全部批次</option>' + batchFilterOptions;
     if (currentValue && batches.find((b) => b.id === currentValue)) s.value = currentValue;
@@ -209,12 +211,78 @@ async function renderTrace() {
     ${invStats.totalAdjustments > 0 ? `<div class="stat"><span>累计校准差异</span><strong class="${diffClass}">${invStats.totalDifference >= 0 ? "+" : ""}${invStats.totalDifference.toLocaleString()} 尾</strong></div>` : ""}
   `;
 
+  const lineageCount = (trace.lineages || []).length;
+  const existingLineagePanel = document.getElementById("traceLineagePanel");
+  if (existingLineagePanel) {
+    existingLineagePanel.remove();
+  }
+  if (lineageCount > 0) {
+    const lineagePanel = document.createElement("div");
+    lineagePanel.id = "traceLineagePanel";
+    lineagePanel.className = "panel";
+    lineagePanel.style.marginBottom = "14px";
+    lineagePanel.innerHTML = `
+      <h2>批次血缘追踪</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <span class="meta">血缘记录：<strong>${lineageCount}</strong> 条</span>
+        <button type="button" class="secondary tiny" id="traceLineageGraphBtn">📊 查看血缘图</button>
+        <button type="button" class="secondary tiny" id="traceContributionBtn">📈 查看来源占比</button>
+      </div>
+      <div id="traceLineageSummary"></div>
+    `;
+    const parentPanel = statsEl.parentElement;
+    parentPanel.insertBefore(lineagePanel, timelineEl.parentElement);
+
+    document.getElementById("traceLineageGraphBtn").onclick = () => openLineageGraphModal(batchSelect.value);
+    document.getElementById("traceContributionBtn").onclick = () => openContributionModal(batchSelect.value);
+
+    (async () => {
+      try {
+        const contribResult = await api(`/api/lineage/${batchSelect.value}/contributions`);
+        const contributions = contribResult.contributions || [];
+        const summaryEl = document.getElementById("traceLineageSummary");
+        if (contributions.length > 0) {
+          const totalCount = trace.batch.estimatedCount || 0;
+          summaryEl.innerHTML = `
+            <div class="meta" style="margin-bottom:6px;"><strong>来源构成：</strong>该批次由 ${contributions.length} 个来源批次构成</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              ${contributions.map(c => `
+                <span class="lineage-source-tag" style="padding:4px 10px;">
+                  ${c.batchId} · ${c.percentage?.toFixed(1) || "0"}%
+                  ${c.contributionCount ? `(${c.contributionCount.toLocaleString()}尾)` : ""}
+                </span>
+              `).join("")}
+            </div>
+          `;
+        } else {
+          summaryEl.innerHTML = '<div class="meta">该批次为原始批次，无血缘来源</div>';
+        }
+      } catch (e) {
+      }
+    })();
+  }
+
   const events = [
     ...trace.transfers.map((e) => ({
       date: e.date,
       title: "池位流转",
       detail: e.fromPool + " → " + e.toPool + "，" + e.count + "尾，" + (e.reason || ""),
     })),
+    ...(trace.lineages || []).map((e) => {
+      const typeLabels = { split: "批次拆分", merge: "批次合并", mix: "混养分配" };
+      const typeLabel = typeLabels[e.type] || e.type;
+      const srcSummary = e.sources.map((s) => `${s.batchId}(${s.contributionCount.toLocaleString()}尾, ${(s.ratio * 100).toFixed(1)}%)`).join(" + ");
+      const tgtSummary = e.targets.map((t) => `${t.batchId}(${t.receivedCount.toLocaleString()}尾, ${(t.ratio * 100).toFixed(1)}%)`).join(" + ");
+      return {
+        date: e.date,
+        title: "血缘" + typeLabel,
+        detail: `来源：${srcSummary} → 目标：${tgtSummary}${e.reason ? "，" + e.reason : ""}`,
+        lineageId: e.id,
+        lineageType: e.type,
+        lineageSources: e.sources,
+        lineageTargets: e.targets,
+      };
+    }),
     ...trace.records.map((e) => ({
       date: e.date,
       title: "每日记录",
@@ -385,6 +453,21 @@ async function renderTrace() {
         }
         if (e.isOldSale) {
           return `<div class="event event-old-sale"><b>${e.date} · ${e.title}</b><div class="meta" style="color:#999;">${e.detail}</div></div>`;
+        }
+        if (e.lineageId) {
+          const typeColors = { split: "#5a7a52", merge: "#216778", mix: "#8b6914" };
+          const typeLabels = { split: "拆分", merge: "合并", mix: "混养" };
+          const color = typeColors[e.lineageType] || "#5a7a52";
+          return `
+            <div class="event event-lineage event-lineage-${e.lineageType}" data-lineage-id="${e.lineageId}" style="cursor:pointer;border-left:3px solid ${color};">
+              <b>${e.date} · ${e.title}</b>
+              <div class="meta">${e.detail}</div>
+              <div class="lineage-event-detail">
+                ${e.lineageSources.map((s) => `<span class="lineage-source-tag">${s.batchId} → ${(s.ratio * 100).toFixed(1)}%</span>`).join("")}
+                <span class="lineage-arrow-tag">→</span>
+                ${e.lineageTargets.map((t) => `<span class="lineage-target-tag">${t.batchId} ← ${(t.ratio * 100).toFixed(1)}%</span>`).join("")}
+              </div>
+            </div>`;
         }
         return `<div class="event"><b>${e.date} · ${e.title}</b><div class="meta ${e.detail.includes("偏低") ? "warning" : ""}">${e.detail}</div></div>`;
       }
@@ -2438,6 +2521,8 @@ const ACTION_LABELS_MAP = {
   farm_delete: "删除场区",
   farm_set_default: "设置默认场区",
   rollback: "撤销操作",
+  lineage_create: "新增血缘",
+  lineage_delete: "删除血缘",
 };
 
 const TARGET_LABELS_MAP = {
@@ -2455,6 +2540,7 @@ const TARGET_LABELS_MAP = {
   farm: "场区",
   threshold: "预警阈值",
   auditLog: "操作日志",
+  lineage: "批次血缘",
 };
 
 async function renderAuditLogs() {
@@ -2751,6 +2837,558 @@ function bindAuditLogEvents() {
   }
 }
 
+function renderLineageStats() {
+  const lineages = filterByFarm(db.lineages || []);
+  const typeFilter = document.getElementById("lineageTypeFilter")?.value || "";
+  const batchFilter = document.getElementById("lineageBatchFilter")?.value || "";
+  let filtered = lineages;
+  if (typeFilter) filtered = filtered.filter((l) => l.type === typeFilter);
+  if (batchFilter) filtered = filtered.filter((l) =>
+    l.sources.some((s) => s.batchId === batchFilter) ||
+    l.targets.some((t) => t.batchId === batchFilter)
+  );
+
+  const splitCount = filtered.filter((l) => l.type === "split").length;
+  const mergeCount = filtered.filter((l) => l.type === "merge").length;
+  const mixCount = filtered.filter((l) => l.type === "mix").length;
+  const totalSourceQty = filtered.reduce((sum, l) =>
+    sum + l.sources.reduce((s, src) => s + Number(src.contributionCount || 0), 0), 0);
+
+  document.getElementById("lineageStats").innerHTML = [
+    ["血缘记录", filtered.length + " 条"],
+    ["拆分", splitCount + " 次"],
+    ["合并", mergeCount + " 次"],
+    ["混养", mixCount + " 次"],
+    ["来源总量", totalSourceQty.toLocaleString() + " 尾"],
+  ].map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join("");
+}
+
+function renderLineageList() {
+  const lineages = filterByFarm(db.lineages || []);
+  const typeFilter = document.getElementById("lineageTypeFilter")?.value || "";
+  const batchFilter = document.getElementById("lineageBatchFilter")?.value || "";
+  let filtered = [...lineages].sort((a, b) => b.date.localeCompare(a.date));
+  if (typeFilter) filtered = filtered.filter((l) => l.type === typeFilter);
+  if (batchFilter) filtered = filtered.filter((l) =>
+    l.sources.some((s) => s.batchId === batchFilter) ||
+    l.targets.some((t) => t.batchId === batchFilter)
+  );
+
+  const list = document.getElementById("lineageList");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="meta" style="grid-column:1/-1;padding:24px;text-align:center;">暂无血缘记录，点击右上角「新增血缘」添加拆分/合并/混养操作</div>`;
+    return;
+  }
+
+  const typeLabels = { split: "批次拆分", merge: "批次合并", mix: "混养分配" };
+  const typeClasses = { split: "status-active", merge: "status-cleaning", mix: "status-idle" };
+
+  list.innerHTML = filtered.map((l) => {
+    const typeLabel = typeLabels[l.type] || l.type;
+    const typeClass = typeClasses[l.type] || "";
+    const srcHtml = l.sources.map((s) => {
+      const batch = db.batches?.find((b) => b.id === s.batchId);
+      return `<div class="lineage-batch-row"><span class="lineage-batch-id">${s.batchId}</span><span class="lineage-batch-species">${batch?.species || ""}</span><span class="lineage-batch-count">${s.contributionCount.toLocaleString()} 尾</span><span class="lineage-batch-ratio">${(s.ratio * 100).toFixed(1)}%</span></div>`;
+    }).join("");
+    const tgtHtml = l.targets.map((t) => {
+      const batch = db.batches?.find((b) => b.id === t.batchId);
+      return `<div class="lineage-batch-row"><span class="lineage-batch-id">${t.batchId}</span><span class="lineage-batch-species">${batch?.species || ""}</span><span class="lineage-batch-count">${t.receivedCount.toLocaleString()} 尾</span><span class="lineage-batch-ratio">${(t.ratio * 100).toFixed(1)}%</span>${t.toPool ? `<span class="lineage-batch-pool">→ ${t.toPool}</span>` : ""}</div>`;
+    }).join("");
+
+    return `
+    <div class="lineage-card lineage-type-${l.type}" data-id="${l.id}">
+      <div class="lineage-card-header">
+        <span class="status-badge ${typeClass}">${typeLabel}</span>
+        <span class="lineage-card-date">${l.date}</span>
+        <span class="lineage-card-id">${l.id}</span>
+        <span class="spacer"></span>
+        <button type="button" class="tiny-btn" data-action="graph">血缘图</button>
+        <button type="button" class="tiny-btn" data-action="contrib">来源占比</button>
+        <button type="button" class="danger tiny-btn" data-action="delete">删除</button>
+      </div>
+      <div class="lineage-card-body">
+        <div class="lineage-card-section">
+          <div class="lineage-section-title">来源批次</div>
+          ${srcHtml}
+        </div>
+        <div class="lineage-card-arrow">↓</div>
+        <div class="lineage-card-section">
+          <div class="lineage-section-title">目标批次</div>
+          ${tgtHtml}
+        </div>
+      </div>
+      ${l.reason ? `<div class="meta" style="margin-top:8px;font-size:12px;">原因：${l.reason}</div>` : ""}
+      ${l.operator ? `<div class="meta" style="font-size:12px;">操作人：${l.operator}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".lineage-card").forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        const action = btn.dataset.action;
+        if (action === "delete") {
+          if (!confirm("确定要删除此血缘记录吗？删除后不会自动恢复批次数量。")) return;
+          try {
+            await api("/api/lineage/" + id, { method: "DELETE" });
+            await load();
+            renderLineages();
+          } catch (err) {
+            alert(err.message);
+          }
+        } else if (action === "graph") {
+          const lin = (db.lineages || []).find((l) => l.id === id);
+          if (!lin) return;
+          const rootBatchId = lin.sources[0]?.batchId || lin.targets[0]?.batchId;
+          if (rootBatchId) openLineageGraphModal(rootBatchId);
+        } else if (action === "contrib") {
+          const lin = (db.lineages || []).find((l) => l.id === id);
+          if (!lin) return;
+          const targetBatchId = lin.targets[0]?.batchId;
+          if (targetBatchId) openContributionModal(targetBatchId);
+        }
+      };
+    });
+  });
+}
+
+function renderLineages() {
+  const batchFilter = document.getElementById("lineageBatchFilter");
+  const batches = filterByFarm(db.batches || []);
+  if (batchFilter && batches.length) {
+    const currentVal = batchFilter.value;
+    batchFilter.innerHTML =
+      '<option value="">全部批次</option>' +
+      batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species}</option>`).join("");
+    if (currentVal && batches.find((b) => b.id === currentVal)) batchFilter.value = currentVal;
+  }
+  renderLineageStats();
+  renderLineageList();
+}
+
+function bindLineageEvents() {
+  const addBtn = document.getElementById("addLineageBtn");
+  const typeFilter = document.getElementById("lineageTypeFilter");
+  const batchFilter = document.getElementById("lineageBatchFilter");
+  if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openLineageModal(); };
+  if (typeFilter) typeFilter.onchange = () => { renderLineageStats(); renderLineageList(); };
+  if (batchFilter) batchFilter.onchange = () => { renderLineageStats(); renderLineageList(); };
+}
+
+function openLineageModal() {
+  const batches = filterByFarm(db.batches || []);
+  const ponds = filterByFarm(db.ponds || []).filter((p) => p.status !== "maintenance");
+  const batchOptions = batches.map((b) => `<option value="${b.id}">${b.id} · ${b.species} · ${b.estimatedCount.toLocaleString()}尾</option>`).join("");
+  const pondOptions = ponds.map((p) => `<option value="${p.id}">${p.name} (${p.id})</option>`).join("");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>新增批次血缘</h2>
+      <form id="lineageForm">
+        <label>操作类型</label>
+        <select name="type" id="lineageTypeSelect" required>
+          <option value="split">批次拆分（1个来源 → 多个目标）</option>
+          <option value="merge">批次合并（多个来源 → 1个目标）</option>
+          <option value="mix">混养分配（多个来源 → 多个目标）</option>
+        </select>
+        <label>日期</label>
+        <input name="date" type="date" required value="${new Date().toISOString().split("T")[0]}">
+        <label>操作人（选填）</label>
+        <input name="operator" placeholder="操作人姓名">
+
+        <div class="lineage-form-section">
+          <h3>来源批次</h3>
+          <div id="lineageSourcesList"></div>
+          <button type="button" class="secondary" id="addSourceBtn">+ 添加来源批次</button>
+        </div>
+
+        <div class="lineage-form-section">
+          <h3>目标批次</h3>
+          <div id="lineageTargetsList"></div>
+          <button type="button" class="secondary" id="addTargetBtn">+ 添加目标批次</button>
+        </div>
+
+        <label>原因/备注（选填）</label>
+        <textarea name="reason" placeholder="拆分/合并/混养的原因说明"></textarea>
+
+        <div id="lineageValidation" class="lineage-validation" style="display:none;"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit">保存血缘记录</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  let sources = [];
+  let targets = [];
+
+  function addSourceRow(prefill = {}) {
+    const idx = sources.length;
+    sources.push({ batchId: prefill.batchId || "", contributionCount: prefill.contributionCount || 0 });
+    const container = modal.querySelector("#lineageSourcesList");
+    const row = document.createElement("div");
+    row.className = "lineage-form-row";
+    row.dataset.idx = idx;
+    row.innerHTML = `
+      <select class="lineage-source-batch" data-idx="${idx}">
+        <option value="">选择来源批次</option>
+        ${batchOptions}
+      </select>
+      <input class="lineage-source-count" type="number" min="0" data-idx="${idx}" placeholder="贡献数量(尾)" value="${prefill.contributionCount || ""}">
+      <button type="button" class="danger tiny lineage-remove-source" data-idx="${idx}">✕</button>
+    `;
+    container.appendChild(row);
+    if (prefill.batchId) row.querySelector(".lineage-source-batch").value = prefill.batchId;
+    row.querySelector(".lineage-source-batch").onchange = (e) => { sources[idx].batchId = e.target.value; validateLineageForm(); };
+    row.querySelector(".lineage-source-count").oninput = (e) => { sources[idx].contributionCount = Number(e.target.value) || 0; validateLineageForm(); };
+    row.querySelector(".lineage-remove-source").onclick = () => { row.remove(); sources[idx] = null; validateLineageForm(); };
+  }
+
+  function addTargetRow(prefill = {}) {
+    const idx = targets.length;
+    targets.push({ batchId: prefill.batchId || "", receivedCount: prefill.receivedCount || 0, toPool: prefill.toPool || "" });
+    const container = modal.querySelector("#lineageTargetsList");
+    const row = document.createElement("div");
+    row.className = "lineage-form-row";
+    row.dataset.idx = idx;
+    row.innerHTML = `
+      <select class="lineage-target-batch" data-idx="${idx}">
+        <option value="">选择目标批次</option>
+        ${batchOptions}
+      </select>
+      <input class="lineage-target-count" type="number" min="0" data-idx="${idx}" placeholder="接收数量(尾)" value="${prefill.receivedCount || ""}">
+      <select class="lineage-target-pool" data-idx="${idx}">
+        <option value="">目标池(选填)</option>
+        ${pondOptions}
+      </select>
+      <button type="button" class="danger tiny lineage-remove-target" data-idx="${idx}">✕</button>
+    `;
+    container.appendChild(row);
+    if (prefill.batchId) row.querySelector(".lineage-target-batch").value = prefill.batchId;
+    if (prefill.toPool) row.querySelector(".lineage-target-pool").value = prefill.toPool;
+    row.querySelector(".lineage-target-batch").onchange = (e) => { targets[idx].batchId = e.target.value; validateLineageForm(); };
+    row.querySelector(".lineage-target-count").oninput = (e) => { targets[idx].receivedCount = Number(e.target.value) || 0; validateLineageForm(); };
+    row.querySelector(".lineage-target-pool").onchange = (e) => { targets[idx].toPool = e.target.value; };
+    row.querySelector(".lineage-remove-target").onclick = () => { row.remove(); targets[idx] = null; validateLineageForm(); };
+  }
+
+  function validateLineageForm() {
+    const validationEl = modal.querySelector("#lineageValidation");
+    const type = modal.querySelector("#lineageTypeSelect").value;
+    const validSources = sources.filter((s) => s !== null && s.batchId);
+    const validTargets = targets.filter((t) => t !== null && t.batchId);
+    const warnings = [];
+
+    if (type === "split" && validSources.length > 1) {
+      warnings.push("拆分操作建议只设1个来源批次");
+    }
+    if (type === "merge" && validTargets.length > 1) {
+      warnings.push("合并操作建议只设1个目标批次");
+    }
+
+    const srcTotal = validSources.reduce((s, src) => s + Number(src.contributionCount || 0), 0);
+    const tgtTotal = validTargets.reduce((s, tgt) => s + Number(tgt.receivedCount || 0), 0);
+
+    if (srcTotal > 0 && tgtTotal > 0) {
+      const diff = Math.abs(srcTotal - tgtTotal);
+      if (diff > srcTotal * 0.05) {
+        warnings.push(`来源总量(${srcTotal.toLocaleString()})与目标总量(${tgtTotal.toLocaleString()})差异超过5%`);
+      }
+    }
+
+    if (warnings.length > 0) {
+      validationEl.style.display = "block";
+      validationEl.innerHTML = warnings.map((w) => `<div class="lineage-validation-warn">⚠ ${w}</div>`).join("");
+    } else {
+      validationEl.style.display = "none";
+      validationEl.innerHTML = "";
+    }
+  }
+
+  modal.querySelector("#lineageTypeSelect").onchange = validateLineageForm;
+  modal.querySelector("#addSourceBtn").onclick = () => addSourceRow();
+  modal.querySelector("#addTargetBtn").onclick = () => addTargetRow();
+
+  addSourceRow();
+  addTargetRow();
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+  modal.querySelector("#lineageForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const type = modal.querySelector("#lineageTypeSelect").value;
+    const date = modal.querySelector('input[name="date"]').value;
+    const operator = modal.querySelector('input[name="operator"]').value;
+    const reason = modal.querySelector('textarea[name="reason"]').value;
+
+    const validSources = sources.filter((s) => s !== null && s.batchId);
+    const validTargets = targets.filter((t) => t !== null && t.batchId);
+
+    if (!validSources.length || !validTargets.length) {
+      alert("至少需要一个来源批次和一个目标批次");
+      return;
+    }
+
+    const payload = {
+      type,
+      date,
+      operator,
+      reason,
+      sources: validSources.map((s) => ({ batchId: s.batchId, contributionCount: s.contributionCount })),
+      targets: validTargets.map((t) => ({ batchId: t.batchId, receivedCount: t.receivedCount, toPool: t.toPool })),
+    };
+
+    try {
+      await api("/api/lineage", { method: "POST", body: JSON.stringify(payload) });
+      modal.remove();
+      await load();
+      renderLineages();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+function openLineageGraphModal(batchId) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>批次血缘图 - ${batchId}</h2>
+      <div id="lineageGraphContainer" class="lineage-graph-container">
+        <div class="meta" style="text-align:center;padding:40px;">加载中...</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeBtn">关闭</button>
+        <button type="button" id="contribBtn">查看来源占比</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector("#closeBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#contribBtn").onclick = () => {
+    modal.remove();
+    openContributionModal(batchId);
+  };
+
+  (async () => {
+    try {
+      const graph = await api(`/api/lineage/${batchId}/graph`);
+      renderLineageGraphSVG(modal.querySelector("#lineageGraphContainer"), graph);
+    } catch (err) {
+      modal.querySelector("#lineageGraphContainer").innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+    }
+  })();
+}
+
+function renderLineageGraphSVG(container, graph) {
+  if (!graph.nodes.length) {
+    container.innerHTML = `<div class="meta" style="text-align:center;padding:40px;">该批次暂无血缘关系</div>`;
+    return;
+  }
+
+  const nodeW = 160;
+  const nodeH = 70;
+  const layerGap = 100;
+  const nodeGap = 30;
+
+  const levels = new Map();
+  function computeLevel(nodeId, visited = new Set()) {
+    if (levels.has(nodeId)) return levels.get(nodeId);
+    if (visited.has(nodeId)) return 0;
+    visited.add(nodeId);
+    const parentEdges = graph.edges.filter((e) => e.to === nodeId);
+    if (parentEdges.length === 0) {
+      levels.set(nodeId, 0);
+      return 0;
+    }
+    let maxParentLevel = 0;
+    for (const edge of parentEdges) {
+      maxParentLevel = Math.max(maxParentLevel, computeLevel(edge.from, visited));
+    }
+    const lvl = maxParentLevel + 1;
+    levels.set(nodeId, lvl);
+    return lvl;
+  }
+
+  graph.nodes.forEach((n) => computeLevel(n.id));
+
+  const levelGroups = new Map();
+  for (const [nodeId, lvl] of levels) {
+    if (!levelGroups.has(lvl)) levelGroups.set(lvl, []);
+    levelGroups.get(lvl).push(nodeId);
+  }
+
+  const maxLevel = Math.max(...levels.values());
+  const svgH = (maxLevel + 1) * (nodeH + layerGap) + 40;
+  const maxNodesInLevel = Math.max(...[...levelGroups.values()].map((g) => g.length));
+  const svgW = Math.max(600, maxNodesInLevel * (nodeW + nodeGap) + 40);
+
+  const nodePositions = new Map();
+  for (const [lvl, nodeIds] of levelGroups) {
+    const totalW = nodeIds.length * nodeW + (nodeIds.length - 1) * nodeGap;
+    const startX = (svgW - totalW) / 2;
+    nodeIds.forEach((nid, i) => {
+      nodePositions.set(nid, { x: startX + i * (nodeW + nodeGap), y: 20 + lvl * (nodeH + layerGap) });
+    });
+  }
+
+  const typeColors = { split: "#5a7a52", merge: "#216778", mix: "#8b6914" };
+
+  let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:100%;height:auto;">`;
+
+  svgContent += `<defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#60727a"/>
+    </marker>
+    <marker id="arrowhead-split" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5a7a52"/>
+    </marker>
+    <marker id="arrowhead-merge" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#216778"/>
+    </marker>
+    <marker id="arrowhead-mix" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#8b6914"/>
+    </marker>
+  </defs>`;
+
+  for (const edge of graph.edges) {
+    const fromPos = nodePositions.get(edge.from);
+    const toPos = nodePositions.get(edge.to);
+    if (!fromPos || !toPos) continue;
+    const x1 = fromPos.x + nodeW / 2;
+    const y1 = fromPos.y + nodeH;
+    const x2 = toPos.x + nodeW / 2;
+    const y2 = toPos.y;
+    const color = typeColors[edge.type] || "#60727a";
+    const marker = `arrowhead-${edge.type}` || "arrowhead";
+    svgContent += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2" marker-end="url(#${marker})"/>`;
+
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    const typeLabel = { split: "拆分", merge: "合并", mix: "混养" }[edge.type] || "";
+    svgContent += `<text x="${midX}" y="${midY - 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="600">${typeLabel}</text>`;
+    if (edge.contributionCount) {
+      svgContent += `<text x="${midX}" y="${midY + 10}" text-anchor="middle" fill="#60727a" font-size="9">${edge.contributionCount.toLocaleString()}尾</text>`;
+    }
+  }
+
+  for (const node of graph.nodes) {
+    const pos = nodePositions.get(node.id);
+    if (!pos) continue;
+    const isRoot = node.id === graph.rootBatchId;
+    const fillColor = isRoot ? "#e8f5e9" : "#f0f7f9";
+    const strokeColor = isRoot ? "#5a7a52" : "#ccdcdb";
+    svgContent += `<rect x="${pos.x}" y="${pos.y}" width="${nodeW}" height="${nodeH}" rx="8" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${isRoot ? 2 : 1}"/>`;
+    svgContent += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 20}" text-anchor="middle" fill="#1d2930" font-size="13" font-weight="700">${node.id}</text>`;
+    svgContent += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 36}" text-anchor="middle" fill="#60727a" font-size="10">${node.species || ""}</text>`;
+    svgContent += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 52}" text-anchor="middle" fill="#60727a" font-size="10">${(node.estimatedCount || 0).toLocaleString()}尾 · ${node.currentPool || ""}</text>`;
+    if (isRoot) {
+      svgContent += `<text x="${pos.x + nodeW / 2}" y="${pos.y + 66}" text-anchor="middle" fill="#5a7a52" font-size="9" font-weight="600">★ 当前批次</text>`;
+    }
+  }
+
+  svgContent += "</svg>";
+  container.innerHTML = svgContent;
+}
+
+function openContributionModal(batchId) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>来源占比分析 - ${batchId}</h2>
+      <div id="contributionContainer" class="contribution-container">
+        <div class="meta" style="text-align:center;padding:40px;">加载中...</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeBtn">关闭</button>
+        <button type="button" id="graphBtn">查看血缘图</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector("#closeBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#graphBtn").onclick = () => {
+    modal.remove();
+    openLineageGraphModal(batchId);
+  };
+
+  (async () => {
+    try {
+      const result = await api(`/api/lineage/${batchId}/contributions`);
+      renderContributionView(modal.querySelector("#contributionContainer"), result);
+    } catch (err) {
+      modal.querySelector("#contributionContainer").innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+    }
+  })();
+}
+
+function renderContributionView(container, result) {
+  const contributions = result.contributions || [];
+  if (!contributions.length) {
+    container.innerHTML = `<div class="meta" style="text-align:center;padding:40px;">该批次暂无来源贡献数据（直接创建的批次无血缘来源）</div>`;
+    return;
+  }
+
+  const maxPercentage = Math.max(...contributions.map((c) => c.percentage || 0));
+  const colors = ["#5a7a52", "#216778", "#8b6914", "#a84e35", "#60727a", "#b58900"];
+
+  let html = '<div class="contribution-list">';
+  contributions.forEach((c, idx) => {
+    const color = colors[idx % colors.length];
+    const barWidth = maxPercentage > 0 ? ((c.percentage || 0) / maxPercentage) * 100 : 0;
+    html += `
+    <div class="contribution-item">
+      <div class="contribution-header">
+        <span class="contribution-batch" style="color:${color};">${c.batchId}</span>
+        <span class="contribution-species">${c.species || ""}</span>
+        <span class="contribution-count">${(c.estimatedCount || 0).toLocaleString()} 尾</span>
+        <span class="contribution-percentage" style="color:${color};">${c.percentage?.toFixed(1) || "0"}%</span>
+      </div>
+      <div class="contribution-bar-bg">
+        <div class="contribution-bar-fill" style="width:${barWidth}%;background:${color};"></div>
+      </div>
+      ${c.contributionCount ? `<div class="meta" style="font-size:11px;margin-top:2px;">贡献数量：${c.contributionCount?.toLocaleString() || "0"} 尾</div>` : ""}
+    </div>`;
+  });
+  html += "</div>";
+
+  html += `<div class="contribution-pie" style="margin-top:16px;text-align:center;">`;
+  html += `<svg width="160" height="160" viewBox="0 0 160 160">`;
+  let startAngle = 0;
+  contributions.forEach((c, idx) => {
+    const pct = (c.percentage || 0) / 100;
+    const endAngle = startAngle + pct * 2 * Math.PI;
+    const x1 = 80 + 70 * Math.cos(startAngle - Math.PI / 2);
+    const y1 = 80 + 70 * Math.sin(startAngle - Math.PI / 2);
+    const x2 = 80 + 70 * Math.cos(endAngle - Math.PI / 2);
+    const y2 = 80 + 70 * Math.sin(endAngle - Math.PI / 2);
+    const largeArc = pct > 0.5 ? 1 : 0;
+    const color = colors[idx % colors.length];
+    if (pct > 0.001) {
+      html += `<path d="M80,80 L${x1},${y1} A70,70 0 ${largeArc},1 ${x2},${y2} Z" fill="${color}" opacity="0.85"/>`;
+    }
+    startAngle = endAngle;
+  });
+  html += `<circle cx="80" cy="80" r="40" fill="white"/>`;
+  html += `<text x="80" y="84" text-anchor="middle" fill="#1d2930" font-size="13" font-weight="700">来源占比</text>`;
+  html += "</svg></div>";
+
+  container.innerHTML = html;
+}
+
 function bindDataIoEvents() {
   dataioPendingRecords = [];
   const fileInput = document.getElementById("dataioFileInput");
@@ -2926,6 +3564,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const pondContainer = document.getElementById("pondContainer");
     pondContainer.classList.remove("hidden");
@@ -2942,6 +3581,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const customerContainer = document.getElementById("customerContainer");
     customerContainer.classList.remove("hidden");
@@ -2973,6 +3613,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const costContainer = document.getElementById("costContainer");
     costContainer.classList.remove("hidden");
@@ -2989,6 +3630,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const warningContainer = document.getElementById("warningContainer");
     warningContainer.classList.remove("hidden");
@@ -3007,6 +3649,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const orderContainer = document.getElementById("orderContainer");
     orderContainer.classList.remove("hidden");
@@ -3025,6 +3668,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const shipmentContainer = document.getElementById("shipmentContainer");
     shipmentContainer.classList.remove("hidden");
@@ -3043,6 +3687,7 @@ function setTab(tab) {
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const farmContainer = document.getElementById("farmContainer");
     farmContainer.classList.remove("hidden");
@@ -3062,6 +3707,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const dataioContainer = document.getElementById("dataioContainer");
     dataioContainer.classList.remove("hidden");
@@ -3079,6 +3725,7 @@ function setTab(tab) {
     document.getElementById("shipmentContainer").classList.add("hidden");
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     const auditlogContainer = document.getElementById("auditlogContainer");
     auditlogContainer.classList.remove("hidden");
@@ -3086,6 +3733,26 @@ function setTab(tab) {
     fillSelects();
     renderAuditLogs();
     bindAuditLogEvents();
+  } else if (tab === "lineage") {
+    form.innerHTML = "";
+    form.classList.add("hidden");
+    document.getElementById("pondContainer").classList.add("hidden");
+    document.getElementById("customerContainer").classList.add("hidden");
+    document.getElementById("costContainer").classList.add("hidden");
+    document.getElementById("warningContainer").classList.add("hidden");
+    document.getElementById("orderContainer").classList.add("hidden");
+    document.getElementById("shipmentContainer").classList.add("hidden");
+    document.getElementById("dataioContainer").classList.add("hidden");
+    document.getElementById("farmContainer").classList.add("hidden");
+    document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
+    inventoryContainer.classList.add("hidden");
+    const lineageContainer = document.getElementById("lineageContainer");
+    lineageContainer.classList.remove("hidden");
+    lineageContainer.innerHTML = forms[tab];
+    fillSelects();
+    renderLineages();
+    bindLineageEvents();
   } else {
     form.classList.remove("hidden");
     form.innerHTML = forms[tab];
@@ -3098,6 +3765,7 @@ function setTab(tab) {
     document.getElementById("dataioContainer").classList.add("hidden");
     document.getElementById("farmContainer").classList.add("hidden");
     document.getElementById("auditlogContainer").classList.add("hidden");
+    document.getElementById("lineageContainer").classList.add("hidden");
     inventoryContainer.classList.add("hidden");
     fillSelects();
     if (tab === "sale") {
@@ -3118,6 +3786,7 @@ async function load() {
   if (!db.orders) db.orders = [];
   if (!db.shipments) db.shipments = [];
   if (!db.opLogs) db.opLogs = [];
+  if (!db.lineages) db.lineages = [];
 
   if (!db.farms.length) {
     db.farms = [{ id: "default", name: "默认场区", isDefault: true }];
@@ -3156,6 +3825,7 @@ async function load() {
   db.inventories = filterByFarm(db.inventories || []);
   db.orders = filterByFarm(db.orders || []);
   db.shipments = filterByFarm(db.shipments || []);
+  db.lineages = filterByFarm(db.lineages || []);
 
   fillSelects();
   renderWarningBanner();
@@ -3185,6 +3855,9 @@ async function load() {
   } else if (activeTab === "auditlog") {
     renderAuditLogs();
     bindAuditLogEvents();
+  } else if (activeTab === "lineage") {
+    renderLineages();
+    bindLineageEvents();
   } else if (activeTab === "farm") {
     renderFarms();
     bindFarmEvents();
