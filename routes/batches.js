@@ -11,6 +11,11 @@ function getDefaultFarmId(db) {
   return DEFAULT_FARM_ID;
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 function sum(items, key) {
   return Number(
     items.reduce((total, item) => total + Number(item[key] || 0), 0).toFixed(2)
@@ -182,7 +187,16 @@ export function createBatchesRouter(helpers) {
     const traceMatch = pathname.match(/^\/api\/batches\/([^/]+)\/trace$/);
     if (traceMatch && method === "GET") {
       const db = await loadDb();
-      const trace = batchTrace(db, traceMatch[1]);
+      const batchId = traceMatch[1];
+      const farmId = getFarmIdFromQuery(req);
+      const batch = db.batches.find((item) => item.id === batchId);
+      if (!batch) {
+        return sendJson(res, 404, { error: "batch_not_found" });
+      }
+      if (farmId && batch.farmId !== farmId) {
+        return sendJson(res, 404, { error: "batch_not_found" });
+      }
+      const trace = batchTrace(db, batchId);
       return trace
         ? sendJson(res, 200, trace)
         : sendJson(res, 404, { error: "batch_not_found" });

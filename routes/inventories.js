@@ -13,6 +13,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 export function createInventoriesRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -68,7 +73,7 @@ export function createInventoriesRouter(helpers) {
       const method = input.method === "full" ? "full" : "sampling";
       const systemEstimate = Number(batch.estimatedCount || 0);
       const difference = actualCount - systemEstimate;
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
+      const farmId = getFarmIdForBatch(db, input.batchId);
 
       const inventory = {
         id: `INV-${Date.now()}`,
@@ -113,7 +118,12 @@ export function createInventoriesRouter(helpers) {
         if (inventoryIndex === -1) {
           return sendJson(res, 404, { error: "盘点记录不存在" });
         }
-        const removed = db.inventories[inventoryIndex];
+        const farmId = getFarmIdFromQuery(req);
+        const existing = db.inventories[inventoryIndex];
+        if (farmId && existing.farmId !== farmId) {
+          return sendJson(res, 404, { error: "盘点记录不存在" });
+        }
+        const removed = existing;
         db.inventories.splice(inventoryIndex, 1);
 
         const batch = db.batches.find((b) => b.id === removed.batchId);

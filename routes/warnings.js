@@ -13,6 +13,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 export function createWarningsRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -81,10 +86,16 @@ export function createWarningsRouter(helpers) {
     if (handleMatch && method === "PATCH") {
       const input = await body(req);
       const db = await loadDb();
-      const warning = (db.warnings || []).find(
+      const warnings = db.warnings || [];
+      const warningIndex = warnings.findIndex(
         (w) => w.id === handleMatch[1]
       );
-      if (!warning) {
+      if (warningIndex === -1) {
+        return sendJson(res, 404, { error: "预警不存在" });
+      }
+      const farmId = getFarmIdFromQuery(req);
+      const warning = warnings[warningIndex];
+      if (farmId && warning.farmId !== farmId) {
         return sendJson(res, 404, { error: "预警不存在" });
       }
       const validStatuses = ["pending", "processing", "resolved", "ignored"];
@@ -115,10 +126,16 @@ export function createWarningsRouter(helpers) {
 
     if (detailMatch && method === "DELETE") {
       const db = await loadDb();
-      const idx = (db.warnings || []).findIndex(
+      const warnings = db.warnings || [];
+      const idx = warnings.findIndex(
         (w) => w.id === detailMatch[1]
       );
       if (idx === -1) {
+        return sendJson(res, 404, { error: "预警不存在" });
+      }
+      const farmId = getFarmIdFromQuery(req);
+      const existing = warnings[idx];
+      if (farmId && existing.farmId !== farmId) {
         return sendJson(res, 404, { error: "预警不存在" });
       }
       db.warnings.splice(idx, 1);

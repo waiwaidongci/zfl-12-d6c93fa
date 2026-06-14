@@ -15,6 +15,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 export function createRecordsRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -39,7 +44,7 @@ export function createRecordsRouter(helpers) {
       if (!db.batches.some((b) => b.id === input.batchId)) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
+      const farmId = getFarmIdForBatch(db, input.batchId);
       const record = {
         id: `REC-${Date.now()}`,
         batchId: input.batchId,
@@ -83,11 +88,15 @@ export function createRecordsRouter(helpers) {
         if (recordIndex === -1) {
           return sendJson(res, 404, { error: "记录不存在" });
         }
+        const farmId = getFarmIdFromQuery(req);
+        const existing = db.records[recordIndex];
+        if (farmId && existing.farmId !== farmId) {
+          return sendJson(res, 404, { error: "记录不存在" });
+        }
         const input = await body(req);
         if (input.batchId && !db.batches.some((b) => b.id === input.batchId)) {
           return sendJson(res, 404, { error: "批次不存在" });
         }
-        const existing = db.records[recordIndex];
         const updated = {
           id: existing.id,
           batchId: input.batchId !== undefined ? input.batchId : existing.batchId,
@@ -99,6 +108,7 @@ export function createRecordsRouter(helpers) {
           feed: input.feed !== undefined ? Number(input.feed) : existing.feed,
           mortality: input.mortality !== undefined ? Number(input.mortality) : existing.mortality,
           abnormal: input.abnormal !== undefined ? (input.abnormal || "无") : existing.abnormal,
+          farmId: existing.farmId,
         };
         db.records[recordIndex] = updated;
 
@@ -110,6 +120,11 @@ export function createRecordsRouter(helpers) {
 
       if (method === "DELETE") {
         if (recordIndex === -1) {
+          return sendJson(res, 404, { error: "记录不存在" });
+        }
+        const farmId = getFarmIdFromQuery(req);
+        const existing = db.records[recordIndex];
+        if (farmId && existing.farmId !== farmId) {
           return sendJson(res, 404, { error: "记录不存在" });
         }
         const removedCount = removeWarningsForRecord(recordId, db);

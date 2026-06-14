@@ -14,6 +14,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 const ORDER_STATUS_LABELS = {
   pending: "待发货",
   partial: "部分发货",
@@ -172,7 +177,7 @@ export function createOrdersRouter(helpers) {
         return sendJson(res, 400, { error: "客户不能为空" });
       }
 
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId.trim());
+      const farmId = getFarmIdForBatch(db, input.batchId.trim());
 
       const order = sanitizeOrder({
         ...input,
@@ -210,14 +215,20 @@ export function createOrdersRouter(helpers) {
       }
 
       if (method === "PUT") {
+        const farmId = getFarmIdFromQuery(req);
+        const existing = orders[orderIndex];
+        if (farmId && existing.farmId !== farmId) {
+          return sendJson(res, 404, { error: "order_not_found" });
+        }
+
         const input = await body(req);
         const errors = validateOrder(input, true);
         if (errors.length) {
           return sendJson(res, 400, { error: "validation_failed", details: errors });
         }
 
-        const existing = orders[orderIndex];
         const updated = sanitizeOrder(input, existing);
+        updated.farmId = existing.farmId;
 
         if (input.customerId || input.customerName) {
           let customerId = input.customerId !== undefined ? input.customerId : existing.customerId || "";
@@ -247,7 +258,11 @@ export function createOrdersRouter(helpers) {
       }
 
       if (method === "DELETE") {
+        const farmId = getFarmIdFromQuery(req);
         const order = orders[orderIndex];
+        if (farmId && order.farmId !== farmId) {
+          return sendJson(res, 404, { error: "order_not_found" });
+        }
         const shipments = (db.shipments || []).filter((s) => s.orderId === orderId);
         if (shipments.length > 0) {
           return sendJson(res, 400, {

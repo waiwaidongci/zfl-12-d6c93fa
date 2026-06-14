@@ -14,6 +14,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 function validateCostItem(input, db, isEdit = false) {
   const errors = [];
 
@@ -91,7 +96,7 @@ export function createCostsRouter(helpers) {
         ? Number(input.quantity)
         : undefined;
 
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId.trim());
+      const farmId = getFarmIdForBatch(db, input.batchId.trim());
 
       const costItem = {
         id: `COST-${Date.now()}`,
@@ -121,6 +126,12 @@ export function createCostsRouter(helpers) {
         return sendJson(res, 404, { error: "成本项目不存在" });
       }
 
+      const farmId = getFarmIdFromQuery(req);
+      const existing = costItems[index];
+      if (farmId && existing.farmId !== farmId) {
+        return sendJson(res, 404, { error: "成本项目不存在" });
+      }
+
       const errors = validateCostItem(input, db, true);
       if (errors.length > 0) {
         return sendJson(res, 400, { error: errors.join("；") });
@@ -130,8 +141,8 @@ export function createCostsRouter(helpers) {
         ? Number(input.quantity)
         : undefined;
 
-      costItems[index] = {
-        ...costItems[index],
+      const updated = {
+        ...existing,
         batchId: input.batchId.trim(),
         category: input.category.trim(),
         date: input.date.trim(),
@@ -139,8 +150,10 @@ export function createCostsRouter(helpers) {
         quantity,
         unit: input.unit?.trim() || undefined,
         description: input.description?.trim() || undefined,
+        farmId: existing.farmId,
       };
 
+      costItems[index] = updated;
       db.costItems = costItems;
       await saveDb(db);
       return sendJson(res, 200, costItems[index]);
@@ -152,6 +165,12 @@ export function createCostsRouter(helpers) {
       const index = costItems.findIndex((c) => c.id === idMatch[1]);
 
       if (index === -1) {
+        return sendJson(res, 404, { error: "成本项目不存在" });
+      }
+
+      const farmId = getFarmIdFromQuery(req);
+      const existing = costItems[index];
+      if (farmId && existing.farmId !== farmId) {
         return sendJson(res, 404, { error: "成本项目不存在" });
       }
 

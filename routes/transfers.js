@@ -13,6 +13,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 export function createTransfersRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -38,7 +43,7 @@ export function createTransfersRouter(helpers) {
       if (!batch) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
+      const farmId = getFarmIdForBatch(db, input.batchId);
       const transfer = {
         id: `TR-${Date.now()}`,
         batchId: input.batchId,

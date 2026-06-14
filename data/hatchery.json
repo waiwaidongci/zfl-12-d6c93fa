@@ -25,7 +25,7 @@
     {
       "id": "P-01",
       "name": "育苗池1号",
-      "capacity": "40m³",
+      "capacity": "50m³",
       "purpose": "虾苗培育",
       "status": "idle",
       "disinfectionDate": "2026-05-28",

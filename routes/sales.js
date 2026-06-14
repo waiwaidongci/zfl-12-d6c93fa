@@ -13,6 +13,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 export function createSalesRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -52,7 +57,7 @@ export function createSalesRouter(helpers) {
         return sendJson(res, 400, { error: "客户不能为空" });
       }
 
-      const farmId = input.farmId || getFarmIdForBatch(db, input.batchId);
+      const farmId = getFarmIdForBatch(db, input.batchId);
 
       const sale = {
         id: `SALE-${Date.now()}`,

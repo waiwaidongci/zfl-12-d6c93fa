@@ -13,6 +13,11 @@ function getFarmIdForBatch(db, batchId) {
   return batch?.farmId || getDefaultFarmId(db);
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 function validateShipment(input, isUpdate = false) {
   const errors = [];
 
@@ -187,7 +192,7 @@ export function createShipmentsRouter(helpers) {
         });
       }
 
-      const farmId = input.farmId || getFarmIdForBatch(db, order.batchId);
+      const farmId = getFarmIdForBatch(db, order.batchId);
 
       const shipment = sanitizeShipment({
         ...input,
@@ -219,7 +224,11 @@ export function createShipmentsRouter(helpers) {
       }
 
       if (method === "DELETE") {
+        const farmId = getFarmIdFromQuery(req);
         const shipment = shipments[shipmentIndex];
+        if (farmId && shipment.farmId !== farmId) {
+          return sendJson(res, 404, { error: "shipment_not_found" });
+        }
         const [deleted] = shipments.splice(shipmentIndex, 1);
         db.shipments = shipments;
         await saveDb(db);

@@ -10,6 +10,11 @@ function getDefaultFarmId(db) {
   return DEFAULT_FARM_ID;
 }
 
+function getFarmIdFromQuery(req) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("farmId");
+}
+
 function validatePond(input, isUpdate = false) {
   const errors = [];
 
@@ -106,12 +111,18 @@ export function createPondsRouter(helpers) {
         if (pondIndex === -1) {
           return sendJson(res, 404, { error: "pond_not_found" });
         }
+        const farmId = getFarmIdFromQuery(req);
+        const existing = db.ponds[pondIndex];
+        if (farmId && existing.farmId !== farmId) {
+          return sendJson(res, 404, { error: "pond_not_found" });
+        }
         const input = await body(req);
         const errors = validatePond(input, true);
         if (errors.length) {
           return sendJson(res, 400, { error: "validation_failed", details: errors });
         }
-        const updated = sanitizePond(input, db.ponds[pondIndex]);
+        const updated = sanitizePond(input, existing);
+        updated.farmId = existing.farmId;
         db.ponds[pondIndex] = updated;
         await saveDb(db);
         return sendJson(res, 200, updated);
@@ -119,6 +130,11 @@ export function createPondsRouter(helpers) {
 
       if (method === "DELETE") {
         if (pondIndex === -1) {
+          return sendJson(res, 404, { error: "pond_not_found" });
+        }
+        const farmId = getFarmIdFromQuery(req);
+        const existing = db.ponds[pondIndex];
+        if (farmId && existing.farmId !== farmId) {
           return sendJson(res, 404, { error: "pond_not_found" });
         }
         const usedInBatch = db.batches.some((b) => b.currentPool === pondId);
@@ -163,6 +179,11 @@ export function createPondsRouter(helpers) {
       if (pondIndex === -1) {
         return sendJson(res, 404, { error: "pond_not_found" });
       }
+      const farmId = getFarmIdFromQuery(req);
+      const existing = db.ponds[pondIndex];
+      if (farmId && existing.farmId !== farmId) {
+        return sendJson(res, 404, { error: "pond_not_found" });
+      }
       const input = await body(req);
       const errors = [];
       if (input.status && !VALID_STATUSES.includes(input.status)) {
@@ -178,7 +199,6 @@ export function createPondsRouter(helpers) {
       if (errors.length) {
         return sendJson(res, 400, { error: "validation_failed", details: errors });
       }
-      const existing = db.ponds[pondIndex];
       const updated = {
         ...existing,
         status: input.status !== undefined ? input.status : existing.status,
@@ -187,6 +207,7 @@ export function createPondsRouter(helpers) {
             ? input.disinfectionDate
             : existing.disinfectionDate,
         note: input.note !== undefined ? input.note.trim() : existing.note,
+        farmId: existing.farmId,
       };
       db.ponds[pondIndex] = updated;
       await saveDb(db);
