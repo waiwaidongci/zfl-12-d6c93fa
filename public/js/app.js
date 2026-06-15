@@ -3160,11 +3160,6 @@ function renderViewModeSelect() {
   if (!select) return;
   select.value = viewMode;
   select.onchange = (e) => setViewMode(e.target.value);
-
-  const farmSelectorWrap = document.getElementById("farmSelectorWrap");
-  if (farmSelectorWrap) {
-    farmSelectorWrap.style.display = viewMode === "farm" ? "" : "none";
-  }
 }
 
 function showOverviewTab() {
