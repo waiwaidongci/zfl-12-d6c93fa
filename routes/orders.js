@@ -1,4 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
+import { getBatchAvailableQuantity } from "./shipments.js";
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 const APPROACHING_THRESHOLD_DAYS = 7;
@@ -217,8 +218,20 @@ export function createOrdersRouter(helpers) {
 
       const db = await loadDb();
 
-      if (!db.batches.some((b) => b.id === input.batchId.trim())) {
+      const batch = db.batches.find((b) => b.id === input.batchId.trim());
+      if (!batch) {
         return sendJson(res, 404, { error: "批次不存在" });
+      }
+
+      const orderQty = Number(input.orderQuantity);
+      const availableQty = getBatchAvailableQuantity(batch, db);
+      if (orderQty > availableQty) {
+        return sendJson(res, 400, {
+          error: "insufficient_stock",
+          message: `批次可售数量不足，当前可售 ${availableQty} 尾，订购 ${orderQty} 尾`,
+          available: availableQty,
+          requested: orderQty,
+        });
       }
 
       let customerId = input.customerId || "";
@@ -317,11 +330,37 @@ export function createOrdersRouter(helpers) {
           }
         }
 
+        const isCancelling = input.status === "cancelled" && existing.status !== "cancelled";
+        const isQuantityIncreasing = input.orderQuantity !== undefined && Number(input.orderQuantity) > Number(existing.orderQuantity);
+
+        if (!isCancelling && isQuantityIncreasing) {
+          const batch = db.batches.find((b) => b.id === existing.batchId);
+          if (batch) {
+            const existingShipments = (db.shipments || []).filter((s) => s.orderId === existing.id);
+            const existingShipped = existingShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+            const existingRemaining = Math.max(0, Number(existing.orderQuantity) - existingShipped);
+            const additionalQty = Number(input.orderQuantity) - Number(existing.orderQuantity);
+
+            const ordersWithoutCurrent = orders.filter((o) => o.id !== existing.id);
+            const tempDb = { ...db, orders: ordersWithoutCurrent };
+            const availableQty = getBatchAvailableQuantity(batch, tempDb);
+
+            if (additionalQty > availableQty) {
+              return sendJson(res, 400, {
+                error: "insufficient_stock",
+                message: `批次可售数量不足，当前可售 ${availableQty} 尾，需增加 ${additionalQty} 尾`,
+                available: availableQty,
+                additional: additionalQty,
+              });
+            }
+          }
+        }
+
         orders[orderIndex] = updated;
         db.orders = orders;
         writeLog(db, {
           operator: input.operator || "",
-          action: input.status !== undefined ? "order_cancel" : "order_update",
+          action: isCancelling ? "order_cancel" : "order_update",
           targetType: "order",
           targetId: existing.id,
           before: existing,

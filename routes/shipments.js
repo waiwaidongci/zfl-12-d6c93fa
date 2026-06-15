@@ -65,6 +65,21 @@ function sanitizeShipment(input, existing = null) {
   };
 }
 
+function getBatchReservedQuantity(batch, db) {
+  const orders = (db.orders || [])
+    .filter((o) => o.batchId === batch.id && o.status !== "cancelled" && o.status !== "completed");
+
+  let reserved = 0;
+  for (const order of orders) {
+    const orderShipments = (db.shipments || [])
+      .filter((s) => s.orderId === order.id);
+    const orderShippedQty = orderShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    const remaining = Math.max(0, Number(order.orderQuantity) - orderShippedQty);
+    reserved += remaining;
+  }
+  return reserved;
+}
+
 function getBatchAvailableQuantity(batch, db) {
   const estimatedCount = Number(batch.estimatedCount || 0);
 
@@ -76,7 +91,9 @@ function getBatchAvailableQuantity(batch, db) {
     .filter((s) => s.batchId === batch.id);
   const shippedQuantity = shipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
 
-  const available = estimatedCount - oldSalesQuantity - shippedQuantity;
+  const reservedQuantity = getBatchReservedQuantity(batch, db);
+
+  const available = estimatedCount - oldSalesQuantity - shippedQuantity - reservedQuantity;
   return Math.max(0, available);
 }
 
@@ -283,7 +300,6 @@ export function createShipmentsRouter(helpers) {
         return sendJson(res, 404, { error: "batch_not_found" });
       }
 
-      const available = getBatchAvailableQuantity(batch, db);
       const oldSales = (db.sales || [])
         .filter((s) => s.batchId === batchId);
       const oldSalesQuantity = oldSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
@@ -292,12 +308,16 @@ export function createShipmentsRouter(helpers) {
         .filter((s) => s.batchId === batchId)
         .reduce((sum, s) => sum + Number(s.quantity || 0), 0);
 
+      const reservedQuantity = getBatchReservedQuantity(batch, db);
+      const availableQuantity = getBatchAvailableQuantity(batch, db);
+
       return sendJson(res, 200, {
         batchId,
         estimatedCount: Number(batch.estimatedCount),
         oldSalesQuantity,
         shippedQuantity,
-        availableQuantity: available,
+        reservedQuantity,
+        availableQuantity,
       });
     }
 
@@ -310,4 +330,5 @@ export {
   sanitizeShipment,
   enrichShipment,
   getBatchAvailableQuantity,
+  getBatchReservedQuantity,
 };

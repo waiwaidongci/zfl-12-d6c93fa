@@ -1,5 +1,5 @@
 import { enrichOrder } from "./orders.js";
-import { enrichShipment, getBatchAvailableQuantity } from "./shipments.js";
+import { enrichShipment, getBatchAvailableQuantity, getBatchReservedQuantity } from "./shipments.js";
 import { writeLog } from "../utils/audit-log.js";
 import { getAllCostCategoriesForFarm, getDefaultCostCategories } from "./farms.js";
 
@@ -117,6 +117,7 @@ export function batchTrace(db, batchId) {
   };
 
   const activeOrders = orders.filter((o) => o.status !== "cancelled" && o.status !== "completed");
+  const reservedQuantity = getBatchReservedQuantity(batch, db);
   const orderStats = {
     totalOrders: orders.length,
     pendingOrders: orders.filter((o) => o.status === "pending").length,
@@ -128,6 +129,7 @@ export function batchTrace(db, batchId) {
     totalOrderQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "orderQuantity"),
     totalShippedQuantity: shippedCount,
     totalRemainingQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "remainingQuantity"),
+    reservedQuantity,
     totalOrderAmount: Number(
       orders
         .filter((o) => o.status !== "cancelled")

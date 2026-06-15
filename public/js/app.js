@@ -225,7 +225,10 @@ async function renderTrace() {
     <div class="stat"><span>总成本</span><strong>${s.totalCost.toFixed(2)} 元</strong></div>
     <div class="stat"><span>估算数量</span><strong>${s.estimatedCount.toLocaleString()} 尾</strong></div>
     <div class="stat"><span>单位苗成本</span><strong>${s.unitCost.toFixed(6)} 元/尾</strong></div>
-    <div class="stat"><span>可售数量</span><strong>${(orderStats.availableQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>旧模式销售</span><strong>${oldSales.count.toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>已发货</span><strong>${newSales.shippedCount.toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>订单占用</span><strong style="color:#c77700;">${(orderStats.reservedQuantity || 0).toLocaleString()} 尾</strong></div>
+    <div class="stat"><span>可售数量</span><strong style="color:#2e7d57;">${(orderStats.availableQuantity || 0).toLocaleString()} 尾</strong></div>
     <div class="stat"><span>订单总数</span><strong>${orderStats.totalOrders || 0} 单</strong></div>
     <div class="stat"><span>待发货</span><strong>${orderStats.pendingOrders || 0} 单</strong></div>
     <div class="stat"><span>部分发货</span><strong>${orderStats.partialOrders || 0} 单</strong></div>
@@ -2001,10 +2004,11 @@ function openOrderModal(orderId = null, prefillBatchId = null) {
           ${batches
             .map(
               (b) =>
-                `<option value="${b.id}" ${(order?.batchId || prefillBatchId) === b.id ? "selected" : ""}>${b.id} · ${b.species} · 可售 ${b.estimatedCount.toLocaleString()} 尾</option>`
+                `<option value="${b.id}" ${(order?.batchId || prefillBatchId) === b.id ? "selected" : ""}>${b.id} · ${b.species}</option>`
             )
             .join("")}
         </select>
+        <div id="orderBatchStockInfo" style="margin-top:8px;padding:10px;background:#f8f9fa;border-radius:6px;font-size:13px;"></div>
         <label>客户</label>
         <div class="order-customer-row">
           <select name="customerId" id="orderCustomerSelect">
@@ -2023,7 +2027,8 @@ function openOrderModal(orderId = null, prefillBatchId = null) {
           <input name="customerName" id="orderCustomerName" placeholder="手动输入客户名称" value="${order?.customerName || ""}">
         </div>
         <label>订购数量（尾）</label>
-        <input name="orderQuantity" type="number" min="1" required value="${order?.orderQuantity || ""}" placeholder="输入订购数量">
+        <input name="orderQuantity" id="orderQuantityInput" type="number" min="1" required value="${order?.orderQuantity || ""}" placeholder="输入订购数量">
+        <div id="orderQtyHint" class="meta" style="font-size:12px;margin-top:4px;"></div>
         <label>单价（元/尾）</label>
         <input name="unitPrice" type="number" step="0.0001" min="0" required value="${order?.unitPrice || ""}" placeholder="如 0.05">
         <label>交付日期</label>
@@ -2039,6 +2044,36 @@ function openOrderModal(orderId = null, prefillBatchId = null) {
   `;
   document.body.appendChild(modal);
 
+  const stockInfoEl = modal.querySelector("#orderBatchStockInfo");
+  const qtyHintEl = modal.querySelector("#orderQtyHint");
+  const qtyInputEl = modal.querySelector("#orderQuantityInput");
+  let currentAvailable = 0;
+
+  const updateBatchStockInfo = async () => {
+    const batchId = modal.querySelector("#orderBatchSelect").value;
+    if (!batchId) {
+      stockInfoEl.innerHTML = "";
+      qtyHintEl.innerHTML = "";
+      currentAvailable = 0;
+      return;
+    }
+    try {
+      const availableRes = await api("/api/batches/" + batchId + "/available");
+      currentAvailable = availableRes.availableQuantity;
+      stockInfoEl.innerHTML = `
+        <div class="row"><span class="label">估算数量</span><span>${availableRes.estimatedCount.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">旧模式销售</span><span>${availableRes.oldSalesQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">已发货</span><span>${availableRes.shippedQuantity.toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">订单占用</span><span style="color:#c77700;">${(availableRes.reservedQuantity || 0).toLocaleString()} 尾</span></div>
+        <div class="row"><span class="label">当前可售</span><strong style="color:#2e7d57;">${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
+      `;
+      qtyHintEl.innerHTML = `最多可订购 ${availableRes.availableQuantity.toLocaleString()} 尾`;
+      qtyInputEl.max = availableRes.availableQuantity;
+    } catch (err) {
+      stockInfoEl.innerHTML = `<span class="warning">${err.message}</span>`;
+    }
+  };
+
   const updateCustomerInputVisibility = () => {
     const customerSelect = modal.querySelector("#orderCustomerSelect");
     const nameWrap = modal.querySelector("#orderCustomerNameWrap");
@@ -2051,8 +2086,10 @@ function openOrderModal(orderId = null, prefillBatchId = null) {
     }
   };
 
+  modal.querySelector("#orderBatchSelect").onchange = updateBatchStockInfo;
   modal.querySelector("#orderCustomerSelect").onchange = updateCustomerInputVisibility;
   updateCustomerInputVisibility();
+  updateBatchStockInfo();
 
   modal.querySelector("#orderQuickAddCustomerBtn").onclick = (e) => {
     e.preventDefault();
@@ -2292,7 +2329,13 @@ function openShipmentModal(shipmentId = null, prefillOrderId = null) {
         <div class="row"><span class="label">订购数量</span><span>${order.orderQuantity.toLocaleString()} 尾</span></div>
         <div class="row"><span class="label">已发货</span><span>${order.shippedQuantity.toLocaleString()} 尾</span></div>
         <div class="row"><span class="label">订单剩余</span><strong>${order.remainingQuantity.toLocaleString()} 尾</strong></div>
-        <div class="row"><span class="label">批次可售</span><strong>${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ddd;">
+          <div class="row"><span class="label">批次估算</span><span>${availableRes.estimatedCount.toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">旧模式销售</span><span>${availableRes.oldSalesQuantity.toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">已发货</span><span>${availableRes.shippedQuantity.toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">订单占用</span><span style="color:#c77700;">${(availableRes.reservedQuantity || 0).toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">批次可售</span><strong style="color:#2e7d57;">${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
+        </div>
         <div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>
       `;
       availableInfo.innerHTML = `最多可发 ${Math.min(order.remainingQuantity, availableRes.availableQuantity).toLocaleString()} 尾（订单剩余 ${order.remainingQuantity.toLocaleString()} 尾，批次可售 ${availableRes.availableQuantity.toLocaleString()} 尾）`;
