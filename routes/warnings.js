@@ -249,6 +249,18 @@ export function createWarningsRouter(helpers) {
         const input = await body(req);
         const oldRule = JSON.parse(JSON.stringify(db.warningThresholdRules[ruleIndex]));
 
+        if (input.isDefault !== undefined) {
+          const newIsDefault = !!input.isDefault;
+          if (!newIsDefault && oldRule.isDefault) {
+            const otherDefaults = db.warningThresholdRules.filter(
+              (r) => r.id !== ruleId && r.isDefault
+            );
+            if (otherDefaults.length === 0) {
+              return sendJson(res, 400, { error: "不能取消此规则的默认身份，请先将其他规则设为默认" });
+            }
+          }
+        }
+
         if (input.isDefault) {
           db.warningThresholdRules.forEach((r) => (r.isDefault = false));
         }

@@ -1907,7 +1907,10 @@ function openRuleEditorModal(existingRule = null, onSaved) {
           <select name="stage">
             ${HATCHERY_STAGES_CLIENT.map((s) => `<option value="${s.key}" ${rule.stage === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
           </select>
-          ${rule.isDefault ? "" : `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" name="isDefault" ${rule.isDefault ? "checked" : ""}> 设为默认规则</label>`}
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" name="isDefault" ${rule.isDefault ? "checked" : ""}>
+            设为默认规则
+          </label>
         </div>
         <div class="meta" style="margin:8px 0;padding:8px;background:#f8faf9;border-radius:6px;font-size:12px;">
           匹配优先级：场区 > 品种 > 育苗阶段。匹配维度越具体优先级越高。留空表示不限制该维度。
