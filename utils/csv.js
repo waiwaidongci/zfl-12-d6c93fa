@@ -251,3 +251,90 @@ export function buildTransferExportHeaders() {
 export function buildSalesExportHeaders() {
   return ["id", "batchId", "date", "customerId", "customer", "count", "unitPrice"];
 }
+
+export function buildOrderExportHeaders() {
+  return [
+    "id",
+    "customerId",
+    "customerName",
+    "batchId",
+    "orderQuantity",
+    "shippedQuantity",
+    "remainingQuantity",
+    "status",
+    "statusLabel",
+    "deliveryDate",
+    "unitPrice",
+    "totalAmount",
+    "note",
+    "createdAt",
+  ];
+}
+
+export function buildShipmentExportHeaders() {
+  return [
+    "id",
+    "orderId",
+    "customerId",
+    "customerName",
+    "batchId",
+    "quantity",
+    "unitPrice",
+    "amount",
+    "date",
+    "note",
+    "createdAt",
+  ];
+}
+
+export function enrichOrdersForExport(orders, db) {
+  return orders.map((order) => {
+    const shipments = (db.shipments || []).filter((s) => s.orderId === order.id);
+    const shippedQuantity = shipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    const remainingQuantity = Math.max(0, Number(order.orderQuantity) - shippedQuantity);
+    const totalAmount = Number(order.orderQuantity) * Number(order.unitPrice);
+
+    let status = order.status;
+    if (status !== "cancelled") {
+      if (shippedQuantity === 0) {
+        status = "pending";
+      } else if (shippedQuantity < Number(order.orderQuantity)) {
+        status = "partial";
+      } else {
+        status = "completed";
+      }
+    }
+
+    const STATUS_LABELS = {
+      pending: "待发货",
+      partial: "部分发货",
+      completed: "已完成",
+      cancelled: "已取消",
+    };
+
+    return {
+      ...order,
+      shippedQuantity,
+      remainingQuantity,
+      status,
+      statusLabel: STATUS_LABELS[status] || status,
+      totalAmount: Number(totalAmount.toFixed(2)),
+    };
+  });
+}
+
+export function enrichShipmentsForExport(shipments, db) {
+  return shipments.map((shipment) => {
+    const order = (db.orders || []).find((o) => o.id === shipment.orderId);
+    const unitPrice = order?.unitPrice || 0;
+    const amount = Number(shipment.quantity) * Number(unitPrice);
+
+    return {
+      ...shipment,
+      customerId: order?.customerId || "",
+      customerName: order?.customerName || shipment.customerName || "",
+      unitPrice: Number(unitPrice),
+      amount: Number(amount.toFixed(2)),
+    };
+  });
+}

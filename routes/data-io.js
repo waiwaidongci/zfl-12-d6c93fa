@@ -6,6 +6,10 @@ import {
   buildRecordExportHeaders,
   buildTransferExportHeaders,
   buildSalesExportHeaders,
+  buildOrderExportHeaders,
+  buildShipmentExportHeaders,
+  enrichOrdersForExport,
+  enrichShipmentsForExport,
   RECORD_SCHEMA,
 } from "../utils/csv.js";
 import { generateWarningsFromRecord } from "./warnings.js";
@@ -79,6 +83,30 @@ export function createDataIoRouter(helpers) {
       const headers = buildSalesExportHeaders();
       const csv = generateCsv(headers, data);
       sendCsvResponse(res, "sales.csv", csv);
+      return true;
+    }
+
+    if (method === "GET" && pathname === "/api/export/orders") {
+      const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.orders || [];
+      if (farmId) data = data.filter((o) => o.farmId === farmId);
+      const enriched = enrichOrdersForExport(data, db);
+      const headers = buildOrderExportHeaders();
+      const csv = generateCsv(headers, enriched);
+      sendCsvResponse(res, "orders.csv", csv);
+      return true;
+    }
+
+    if (method === "GET" && pathname === "/api/export/shipments") {
+      const db = await loadDb();
+      const farmId = getFarmIdFromQuery(req.url);
+      let data = db.shipments || [];
+      if (farmId) data = data.filter((s) => s.farmId === farmId);
+      const enriched = enrichShipmentsForExport(data, db);
+      const headers = buildShipmentExportHeaders();
+      const csv = generateCsv(headers, enriched);
+      sendCsvResponse(res, "shipments.csv", csv);
       return true;
     }
 

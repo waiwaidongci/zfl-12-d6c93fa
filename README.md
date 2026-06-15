@@ -6,7 +6,7 @@
 npm start
 ```
 
-访问`http://localhost:3012`。系统支持批次、每日水质投喂、分池合池、出苗销售、育苗池档案、客户档案和批次追溯统计。
+访问`http://localhost:3012`。系统支持批次、每日水质投喂、分池合池、出苗销售、育苗池档案、客户档案、订单管理、发货管理和批次追溯统计。支持数据导入导出（批次、每日记录、分池合池、销售记录、订单、发货记录）。
 
 ## 功能模块
 
@@ -154,6 +154,8 @@ GET /api/export/batches?farmId=FARM-DEFAULT
 GET /api/export/records?farmId=FARM-DEFAULT
 GET /api/export/transfers?farmId=FARM-DEFAULT
 GET /api/export/sales?farmId=FARM-DEFAULT
+GET /api/export/orders?farmId=FARM-DEFAULT
+GET /api/export/shipments?farmId=FARM-DEFAULT
 ```
 
 场区管理 API：
