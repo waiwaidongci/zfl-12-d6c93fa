@@ -164,64 +164,120 @@ function computeContribution(db, batchId, farmId) {
     ? (db.lineages || []).filter((l) => l.farmId === farmId)
     : (db.lineages || []);
 
-  const contributions = [];
+  const cache = new Map();
 
-  function trace(bid, ratio, path, visitedBatches, beforeDate) {
-    if (visitedBatches.has(bid)) return;
-    visitedBatches.add(bid);
+  function calcInitialQty(bid) {
+    const batch = (db.batches || []).find((b) => b.id === bid);
+    if (!batch) return 0;
 
-    const parentLineages = lineages.filter((l) =>
-      l.targets.some((t) => t.batchId === bid) &&
-      (!beforeDate || l.date <= beforeDate)
+    const allRelated = lineages.filter((l) =>
+      l.sources.some((s) => s.batchId === bid) || l.targets.some((t) => t.batchId === bid)
     );
 
-    const hasRealParent = parentLineages.some((l) =>
-      l.sources.some((s) => s.batchId !== bid && !visitedBatches.has(s.batchId))
-    );
-
-    if (!hasRealParent) {
-      const existing = contributions.find((c) => c.batchId === bid);
-      if (existing) {
-        existing.ratio += ratio;
-        existing.paths.push([...path]);
-      } else {
-        const batch = (db.batches || []).find((b) => b.id === bid);
-        contributions.push({
-          batchId: bid,
-          species: batch ? batch.species : "",
-          estimatedCount: batch ? batch.estimatedCount : 0,
-          ratio: ratio,
-          paths: [[...path]],
-        });
-      }
-      return;
-    }
-
-    for (const lin of parentLineages) {
+    let runningQty = Number(batch.estimatedCount || 0);
+    for (let i = allRelated.length - 1; i >= 0; i--) {
+      const lin = allRelated[i];
+      const sourceEntry = lin.sources.find((s) => s.batchId === bid);
       const targetEntry = lin.targets.find((t) => t.batchId === bid);
-      const targetRatio = targetEntry ? (targetEntry.ratio || 0) : 0;
-      if (targetRatio <= 0) continue;
+      let change = 0;
+      if (sourceEntry) change -= Number(sourceEntry.contributionCount || 0);
+      if (targetEntry) change += Number(targetEntry.receivedCount || 0);
+      runningQty -= change;
+    }
+    return Math.max(0, runningQty);
+  }
 
-      for (const src of lin.sources) {
-        if (src.batchId === bid) continue;
-        if (visitedBatches.has(src.batchId)) continue;
-        const srcRatio = src.ratio || 0;
-        if (srcRatio <= 0) continue;
-        const newPath = [...path, { lineageId: lin.id, type: lin.type, date: lin.date }];
-        trace(src.batchId, ratio * srcRatio, newPath, new Set(visitedBatches), lin.date);
+  function calcSources(bid, beforeDate) {
+    const key = `${bid}_${beforeDate || "now"}`;
+    if (cache.has(key)) return cache.get(key);
+
+    const batch = (db.batches || []).find((b) => b.id === bid);
+    if (!batch) {
+      const result = { sources: {}, total: 0 };
+      cache.set(key, result);
+      return result;
+    }
+
+    const related = lineages.filter((l) =>
+      (l.sources.some((s) => s.batchId === bid) || l.targets.some((t) => t.batchId === bid)) &&
+      (!beforeDate || l.date < beforeDate)
+    ).sort((a, b) => a.date.localeCompare(b.date));
+
+    const initialQty = calcInitialQty(bid);
+
+    const sources = {};
+    if (initialQty > 0) {
+      sources[bid] = initialQty;
+    }
+    let totalQty = initialQty;
+
+    for (const lin of related) {
+      const sourceEntry = lin.sources.find((s) => s.batchId === bid);
+      const targetEntry = lin.targets.find((t) => t.batchId === bid);
+
+      if (sourceEntry) {
+        const outQty = Number(sourceEntry.contributionCount || 0);
+        if (totalQty > 0 && outQty > 0) {
+          const outRatio = outQty / totalQty;
+          for (const sid of Object.keys(sources)) {
+            sources[sid] = Math.max(0, sources[sid] - sources[sid] * outRatio);
+          }
+          totalQty -= outQty;
+        }
+      }
+
+      if (targetEntry) {
+        const inQty = Number(targetEntry.receivedCount || 0);
+        if (inQty > 0) {
+          const totalSource = lin.sources.reduce((s, src) => s + Number(src.contributionCount || 0), 0);
+          const inSources = {};
+
+          for (const src of lin.sources) {
+            const srcQty = Number(src.contributionCount || 0);
+            if (srcQty <= 0 || totalSource <= 0) continue;
+
+            const srcContribToTarget = inQty * (srcQty / totalSource);
+
+            const srcResult = calcSources(src.batchId, lin.date);
+            const srcTotal = srcResult.total || 1;
+
+            for (const sid of Object.keys(srcResult.sources)) {
+              const scaled = srcResult.sources[sid] * (srcContribToTarget / srcTotal);
+              inSources[sid] = (inSources[sid] || 0) + scaled;
+            }
+          }
+
+          for (const sid of Object.keys(inSources)) {
+            sources[sid] = (sources[sid] || 0) + inSources[sid];
+          }
+          totalQty += inQty;
+        }
       }
     }
+
+    const result = { sources, total: totalQty };
+    cache.set(key, result);
+    return result;
   }
 
-  trace(batchId, 1, [], new Set(), null);
+  const result = calcSources(batchId, null);
 
-  let totalRatio = contributions.reduce((s, c) => s + c.ratio, 0);
-  if (totalRatio > 0) {
-    for (const c of contributions) {
-      c.contributionCount = Math.round(c.ratio / totalRatio * ((db.batches || []).find(b => b.id === batchId)?.estimatedCount || 0));
-      c.percentage = Number(((c.ratio / totalRatio) * 100).toFixed(2));
-    }
+  const contributions = [];
+  for (const [sid, qty] of Object.entries(result.sources)) {
+    const batch = (db.batches || []).find((b) => b.id === sid);
+    const percentage = result.total > 0 ? (qty / result.total) * 100 : 0;
+    contributions.push({
+      batchId: sid,
+      species: batch ? batch.species : "",
+      estimatedCount: batch ? batch.estimatedCount : 0,
+      contributionCount: Math.round(qty),
+      percentage: Number(percentage.toFixed(2)),
+      ratio: result.total > 0 ? qty / result.total : 0,
+      paths: [],
+    });
   }
+
+  contributions.sort((a, b) => b.percentage - a.percentage);
 
   return contributions;
 }
@@ -279,77 +335,16 @@ export function migrateTransfersToLineage(db) {
 function validateNoCycle(db, sources, targets, type, date) {
   const targetIds = targets.map((t) => t.batchId);
   const sourceIds = sources.map((s) => s.batchId);
-  const lineages = db.lineages || [];
 
   const onlySelf = sourceIds.length === 1 && targetIds.length === 1 && sourceIds[0] === targetIds[0];
   if (onlySelf && type !== "mix") {
     return `操作无效：来源和目标不能都是同一个批次`;
   }
 
-  const visitedDown = new Map();
-  const downQueue = [];
-  for (const tid of targetIds) {
-    if (!sourceIds.includes(tid)) {
-      downQueue.push({ id: tid, minDate: date });
-      visitedDown.set(tid, date);
-    }
-  }
-
-  while (downQueue.length > 0) {
-    const { id: current, minDate } = downQueue.shift();
-
-    if (sourceIds.includes(current)) {
-      return `存在循环依赖：目标批次 ${targetIds.join(",")} 通过 ${date} 之后的血缘链追溯到来源批次 ${current}，会形成闭环`;
-    }
-
-    const childLineages = lineages.filter((l) =>
-      l.sources.some((s) => s.batchId === current) &&
-      l.date >= minDate
-    );
-
-    for (const lin of childLineages) {
-      for (const tgt of lin.targets) {
-        if (tgt.batchId === current) continue;
-        const existing = visitedDown.get(tgt.batchId);
-        if (!existing || existing > lin.date) {
-          visitedDown.set(tgt.batchId, lin.date);
-          downQueue.push({ id: tgt.batchId, minDate: lin.date });
-        }
-      }
-    }
-  }
-
-  const visitedUp = new Map();
-  const upQueue = [];
-  for (const sid of sourceIds) {
-    if (!targetIds.includes(sid)) {
-      upQueue.push({ id: sid, maxDate: date });
-      visitedUp.set(sid, date);
-    }
-  }
-
-  while (upQueue.length > 0) {
-    const { id: current, maxDate } = upQueue.shift();
-
-    if (targetIds.includes(current)) {
-      return `存在循环依赖：来源批次 ${sourceIds.join(",")} 通过 ${date} 之前的血缘链追溯到目标批次 ${current}，会形成闭环`;
-    }
-
-    const parentLineages = lineages.filter((l) =>
-      l.targets.some((t) => t.batchId === current) &&
-      l.date <= maxDate
-    );
-
-    for (const lin of parentLineages) {
-      for (const src of lin.sources) {
-        if (src.batchId === current) continue;
-        const existing = visitedUp.get(src.batchId);
-        if (!existing || existing < lin.date) {
-          visitedUp.set(src.batchId, lin.date);
-          upQueue.push({ id: src.batchId, maxDate: lin.date });
-        }
-      }
-    }
+  const allEmpty = sources.every((s) => !s.contributionCount || Number(s.contributionCount) <= 0) &&
+                   targets.every((t) => !t.receivedCount || Number(t.receivedCount) <= 0);
+  if (allEmpty) {
+    return `操作无效：来源和目标数量都为0`;
   }
 
   return null;
@@ -496,16 +491,6 @@ function detectLineageRisks(db, lineage) {
         detail: { batchId: tgt.batchId, hatchDate: batch.hatchDate, lineageDate: lineage.date },
       });
     }
-  }
-
-  const cycleError = validateNoCycle(db, lineage.sources, lineage.targets, lineage.type, lineage.date);
-  if (cycleError) {
-    risks.push({
-      type: "cycle",
-      level: "error",
-      message: cycleError,
-      detail: {},
-    });
   }
 
   return risks;
