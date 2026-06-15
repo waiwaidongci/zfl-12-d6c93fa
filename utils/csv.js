@@ -87,93 +87,73 @@ export const RECORD_SCHEMA = {
   },
 };
 
-export function validateRecordsCsv(parsed, db) {
-  const { headers, rows } = parsed;
-  const missingHeaders = RECORD_SCHEMA.required.filter(
-    (h) => !headers.includes(h)
-  );
-  if (missingHeaders.length > 0) {
-    return {
-      valid: false,
-      fatalError: "缺少必要列：" + missingHeaders.join("、"),
-    };
+function validateSingleRecordRow(row, rowNum, context) {
+  const { batchIds, existingRecordKeys, seenKeys, excludeDuplicateInFileCheck } = context || {};
+  const rowErrors = [];
+
+  RECORD_SCHEMA.required.forEach((field) => {
+    if (!row[field] || String(row[field]).trim() === "") {
+      rowErrors.push({
+        type: "missing_field",
+        field,
+        row: rowNum,
+        message: `第${rowNum}行：字段"${RECORD_SCHEMA.fieldLabels[field] || field}"缺失`,
+      });
+    }
+  });
+
+  if (
+    row.batchId &&
+    String(row.batchId).trim() !== "" &&
+    batchIds &&
+    !batchIds.has(String(row.batchId).trim())
+  ) {
+    rowErrors.push({
+      type: "batch_not_found",
+      field: "batchId",
+      row: rowNum,
+      message: `第${rowNum}行：批次"${row.batchId}"不存在`,
+    });
   }
 
-  const batchIds = new Set(db.batches.map((b) => b.id));
-  const existingRecordKeys = new Set(
-    db.records.map((r) => r.batchId + "|" + r.date)
-  );
-  const seenKeys = new Set();
-
-  const errors = [];
-  const warnings = [];
-  const validRows = [];
-
-  rows.forEach((row, idx) => {
-    const rowNum = idx + 2;
-    const rowErrors = [];
-
-    RECORD_SCHEMA.required.forEach((field) => {
-      if (!row[field] || String(row[field]).trim() === "") {
+  RECORD_SCHEMA.numeric.forEach((field) => {
+    if (row[field] !== undefined && String(row[field]).trim() !== "") {
+      const num = Number(row[field]);
+      if (isNaN(num)) {
         rowErrors.push({
-          type: "missing_field",
+          type: "invalid_number",
           field,
           row: rowNum,
-          message: `第${rowNum}行：字段"${RECORD_SCHEMA.fieldLabels[field] || field}"缺失`,
+          message: `第${rowNum}行：字段"${RECORD_SCHEMA.fieldLabels[field] || field}"值"${row[field]}"不是有效数字`,
         });
       }
-    });
-
-    if (
-      row.batchId &&
-      String(row.batchId).trim() !== "" &&
-      !batchIds.has(String(row.batchId).trim())
-    ) {
-      rowErrors.push({
-        type: "batch_not_found",
-        field: "batchId",
-        row: rowNum,
-        message: `第${rowNum}行：批次"${row.batchId}"不存在`,
-      });
     }
+  });
 
-    RECORD_SCHEMA.numeric.forEach((field) => {
-      if (row[field] !== undefined && String(row[field]).trim() !== "") {
-        const num = Number(row[field]);
-        if (isNaN(num)) {
-          rowErrors.push({
-            type: "invalid_number",
-            field,
-            row: rowNum,
-            message: `第${rowNum}行：字段"${RECORD_SCHEMA.fieldLabels[field] || field}"值"${row[field]}"不是有效数字`,
-          });
-        }
-      }
+  if (
+    row.date &&
+    String(row.date).trim() !== "" &&
+    !/^\d{4}-\d{2}-\d{2}$/.test(String(row.date).trim())
+  ) {
+    rowErrors.push({
+      type: "invalid_format",
+      field: "date",
+      row: rowNum,
+      message: `第${rowNum}行：日期"${row.date}"格式不正确，应为YYYY-MM-DD`,
     });
+  }
 
-    if (
-      row.date &&
-      String(row.date).trim() !== "" &&
-      !/^\d{4}-\d{2}-\d{2}$/.test(String(row.date).trim())
-    ) {
+  const key = (row.batchId || "") + "|" + (row.date || "");
+  if (row.batchId && row.date) {
+    if (existingRecordKeys && existingRecordKeys.has(key)) {
       rowErrors.push({
-        type: "invalid_format",
+        type: "duplicate_existing",
         field: "date",
         row: rowNum,
-        message: `第${rowNum}行：日期"${row.date}"格式不正确，应为YYYY-MM-DD`,
+        message: `第${rowNum}行：批次${row.batchId}在${row.date}已有记录`,
       });
     }
-
-    const key = (row.batchId || "") + "|" + (row.date || "");
-    if (row.batchId && row.date) {
-      if (existingRecordKeys.has(key)) {
-        rowErrors.push({
-          type: "duplicate_existing",
-          field: "date",
-          row: rowNum,
-          message: `第${rowNum}行：批次${row.batchId}在${row.date}已有记录`,
-        });
-      }
+    if (!excludeDuplicateInFileCheck && seenKeys) {
       if (seenKeys.has(key)) {
         rowErrors.push({
           type: "duplicate_in_file",
@@ -185,21 +165,69 @@ export function validateRecordsCsv(parsed, db) {
         seenKeys.add(key);
       }
     }
+  }
 
-    if (rowErrors.length > 0) {
-      errors.push(...rowErrors);
+  let normalizedRow = null;
+  if (rowErrors.length === 0) {
+    normalizedRow = {
+      batchId: String(row.batchId).trim(),
+      date: String(row.date).trim(),
+      poolId: row.poolId ? String(row.poolId).trim() : "",
+      temperature: Number(row.temperature),
+      salinity: Number(row.salinity),
+      oxygen: Number(row.oxygen),
+      feed: Number(row.feed),
+      mortality: Number(row.mortality),
+      abnormal: row.abnormal ? String(row.abnormal).trim() : "无",
+    };
+  }
+
+  return {
+    rowNum,
+    originalRow: { ...row },
+    normalizedRow,
+    errors: rowErrors,
+    isValid: rowErrors.length === 0,
+  };
+}
+
+export function validateRecordsCsv(parsed, db, options = {}) {
+  const { headers, rows } = parsed;
+  const missingHeaders = RECORD_SCHEMA.required.filter(
+    (h) => !headers.includes(h)
+  );
+  if (missingHeaders.length > 0) {
+    return {
+      valid: false,
+      fatalError: "缺少必要列：" + missingHeaders.join("、"),
+    };
+  }
+
+  const batchIds = new Set((db.batches || []).map((b) => b.id));
+  const existingRecordKeys = new Set(
+    (db.records || []).map((r) => r.batchId + "|" + r.date)
+  );
+  const seenKeys = new Set();
+
+  const errors = [];
+  const warnings = [];
+  const validRows = [];
+  const allRowStatuses = [];
+
+  rows.forEach((row, idx) => {
+    const rowNum = idx + 2;
+    const result = validateSingleRecordRow(row, rowNum, {
+      batchIds,
+      existingRecordKeys,
+      seenKeys,
+    });
+
+    allRowStatuses.push(result);
+
+    if (result.isValid) {
+      validRows.push(result.normalizedRow);
     } else {
-      validRows.push({
-        batchId: String(row.batchId).trim(),
-        date: String(row.date).trim(),
-        poolId: row.poolId ? String(row.poolId).trim() : "",
-        temperature: Number(row.temperature),
-        salinity: Number(row.salinity),
-        oxygen: Number(row.oxygen),
-        feed: Number(row.feed),
-        mortality: Number(row.mortality),
-        abnormal: row.abnormal ? String(row.abnormal).trim() : "无",
-      });
+      errors.push(...result.errors);
     }
   });
 
@@ -213,7 +241,24 @@ export function validateRecordsCsv(parsed, db) {
     warnings,
     preview: validRows.slice(0, 20),
     validRows,
+    allRowStatuses,
+    headers,
   };
+}
+
+export function revalidateSingleRow(row, rowNum, db, existingValidKeys = []) {
+  const batchIds = new Set((db.batches || []).map((b) => b.id));
+  const existingRecordKeys = new Set(
+    (db.records || []).map((r) => r.batchId + "|" + r.date)
+  );
+  const seenKeys = new Set(existingValidKeys);
+
+  return validateSingleRecordRow(row, rowNum, {
+    batchIds,
+    existingRecordKeys,
+    seenKeys,
+    excludeDuplicateInFileCheck: false,
+  });
 }
 
 export function buildRecordExportHeaders() {

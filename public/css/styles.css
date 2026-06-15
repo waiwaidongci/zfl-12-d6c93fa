@@ -3194,6 +3194,72 @@ button.tiny {
   }
 }
 
+.dataio-mode-btn.active {
+  background: var(--blue) !important;
+  color: #fff !important;
+  border-color: var(--blue) !important;
+}
+
+.dataio-draft-table-wrap {
+  max-height: 520px;
+}
+
+.dataio-draft-table tbody tr.dataio-row-invalid {
+  background: #fef6f4 !important;
+}
+
+.dataio-draft-table tbody tr.dataio-row-valid {
+  background: #f6fbf7 !important;
+}
+
+.dataio-draft-table td.dataio-row-num {
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  width: 50px;
+}
+
+.dataio-draft-table td.dataio-row-status {
+  text-align: center;
+  white-space: nowrap;
+  width: 70px;
+  font-weight: 600;
+}
+
+.dataio-draft-table td.dataio-row-errors {
+  max-width: 260px;
+  min-width: 180px;
+}
+
+.dataio-draft-table td.dataio-row-actions {
+  white-space: nowrap;
+  width: 120px;
+  text-align: center;
+}
+
+.dataio-row-error-item {
+  font-size: 11px;
+  padding: 2px 0;
+  color: var(--warn);
+  line-height: 1.5;
+}
+
+.dataio-row-error-item .dataio-error-type {
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.dataio-edit-input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 0;
+}
+
+.dataio-input-error {
+  border-color: var(--warn) !important;
+  background: #fff5f3 !important;
+}
+
 .hidden {
   display: none !important;
 }

@@ -90,7 +90,7 @@ const forms = {
   shipment:
     '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
   dataio:
-    '<h2>数据导入导出</h2><div class="dataio-section"><h3>导出数据</h3><p class="meta">将系统数据导出为 CSV 文件下载，可用于备份或离线处理</p><div class="dataio-export-btns"><button type="button" class="dataio-export-btn" data-export="batches">导出批次</button><button type="button" class="dataio-export-btn" data-export="records">导出每日记录</button><button type="button" class="dataio-export-btn" data-export="transfers">导出分池合池</button><button type="button" class="dataio-export-btn" data-export="sales">导出销售记录</button><button type="button" class="dataio-export-btn" data-export="orders">导出订单</button><button type="button" class="dataio-export-btn" data-export="shipments">导出发货记录</button></div></div><div class="dataio-section"><h3>导入每日水质投喂记录</h3><div class="dataio-field-info" style="margin-top:8px;padding:10px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><p class="meta" style="margin:0 0 6px;"><strong>必填列：</strong>batchId（批次号）、date（日期 YYYY-MM-DD）、temperature（水温℃）、salinity（盐度）、oxygen（溶氧mg/L）、feed（投喂量kg）、mortality（死亡率%）</p><p class="meta" style="margin:0 0 6px;"><strong>选填列：</strong>poolId（池号）、abnormal（异常情况，默认为"无"）</p><p class="meta" style="margin:0;"><strong>说明：</strong>系统会在导入前校验字段缺失、批次不存在、数值非法和重复日期，确认后才会写入 data/hatchery.json。可点击下方「下载模板」获取包含示例的 CSV 模板文件。</p></div><div class="dataio-import-area" style="margin-top:10px;"><input type="file" id="dataioFileInput" accept=".csv" /><button type="button" id="dataioPreviewBtn" disabled>预检导入</button><button type="button" id="dataioDownloadTemplate">下载模板</button><a href="/examples/records_template.csv" download target="_blank" style="margin-left:8px;font-size:13px;color:var(--blue);">查看示例文件 ↗</a></div><div id="dataioPreviewResult" class="hidden"></div></div>',
+    '<h2>数据导入导出</h2><div class="dataio-section"><h3>导出数据</h3><p class="meta">将系统数据导出为 CSV 文件下载，可用于备份或离线处理</p><div class="dataio-export-btns"><button type="button" class="dataio-export-btn" data-export="batches">导出批次</button><button type="button" class="dataio-export-btn" data-export="records">导出每日记录</button><button type="button" class="dataio-export-btn" data-export="transfers">导出分池合池</button><button type="button" class="dataio-export-btn" data-export="sales">导出销售记录</button><button type="button" class="dataio-export-btn" data-export="orders">导出订单</button><button type="button" class="dataio-export-btn" data-export="shipments">导出发货记录</button></div></div><div class="dataio-section"><h3>导入每日水质投喂记录</h3><div class="dataio-mode-switch" style="margin:10px 0 14px;display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="secondary dataio-mode-btn active" data-mode="quick">⚡ 快速模式（预检后直接导入）</button><button type="button" class="secondary dataio-mode-btn" data-mode="draft">📝 草稿模式（可修正错误行后导入）</button></div><div id="dataioDraftListSection" class="hidden" style="margin-bottom:14px;padding:12px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><strong style="font-size:13px;">📋 未完成的导入草稿</strong><button type="button" class="secondary" id="dataioRefreshDraftList" style="padding:4px 10px;font-size:12px;">刷新</button></div><div id="dataioDraftList"></div></div><div class="dataio-field-info" style="margin-top:8px;padding:10px;background:#f8faf9;border:1px solid var(--line);border-radius:6px;"><p class="meta" style="margin:0 0 6px;"><strong>必填列：</strong>batchId（批次号）、date（日期 YYYY-MM-DD）、temperature（水温℃）、salinity（盐度）、oxygen（溶氧mg/L）、feed（投喂量kg）、mortality（死亡率%）</p><p class="meta" style="margin:0 0 6px;"><strong>选填列：</strong>poolId（池号）、abnormal（异常情况，默认为"无"）</p><p class="meta" style="margin:0;"><strong>说明：</strong>快速模式直接导入无错误的行；草稿模式会将所有行保存为草稿，错误行可在页面内修改后再确认导入。确认前不会污染正式数据。</p></div><div class="dataio-import-area" style="margin-top:10px;"><input type="file" id="dataioFileInput" accept=".csv" /><button type="button" id="dataioPreviewBtn" disabled>预检/保存草稿</button><button type="button" id="dataioDownloadTemplate">下载模板</button><a href="/examples/records_template.csv" download target="_blank" style="margin-left:8px;font-size:13px;color:var(--blue);">查看示例文件 ↗</a></div><div id="dataioPreviewResult" class="hidden"></div></div>',
   farm:
     '<h2>场区管理</h2><div class="farm-toolbar"><div class="spacer"></div><button type="button" id="addFarmBtn">+ 新增场区</button></div><div class="farm-stats" id="farmStats"></div><div class="grid" id="farmList"></div>',
   auditlog:
@@ -3267,6 +3267,8 @@ function renderWarningBanner() {
 }
 
 let dataioPendingRecords = [];
+let dataioCurrentDraft = null;
+let dataioDraftMode = "preview";
 let auditlogPage = 1;
 
 const ACTION_LABELS_MAP = {
@@ -3305,6 +3307,9 @@ const ACTION_LABELS_MAP = {
   rollback: "撤销操作",
   lineage_create: "新增血缘",
   lineage_delete: "删除血缘",
+  import_draft_create: "创建导入草稿",
+  import_draft_abandon: "放弃导入草稿",
+  import_draft_confirm: "确认导入草稿",
 };
 
 const TARGET_LABELS_MAP = {
@@ -3323,6 +3328,7 @@ const TARGET_LABELS_MAP = {
   threshold: "预警阈值",
   auditLog: "操作日志",
   lineage: "批次血缘",
+  import_draft: "导入草稿",
 };
 
 async function renderAuditLogs() {
@@ -4343,72 +4349,8 @@ function renderFlowAuditView(container, audit, batchId) {
   container.innerHTML = html;
 }
 
-function bindDataIoEvents() {
-  dataioPendingRecords = [];
-  const fileInput = document.getElementById("dataioFileInput");
-  const previewBtn = document.getElementById("dataioPreviewBtn");
-  const templateBtn = document.getElementById("dataioDownloadTemplate");
-  const previewResult = document.getElementById("dataioPreviewResult");
-
-  document.querySelectorAll(".dataio-export-btn").forEach((btn) => {
-    btn.onclick = () => {
-      const type = btn.dataset.export;
-      const farmId = getEffectiveFarmId();
-      const params = farmId ? "?farmId=" + farmId : "";
-      window.open("/api/export/" + type + params, "_blank");
-    };
-  });
-
-  fileInput.onchange = () => {
-    previewBtn.disabled = !fileInput.files.length;
-    previewResult.classList.add("hidden");
-    dataioPendingRecords = [];
-  };
-
-  templateBtn.onclick = () => {
-    const lines = [
-      "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal",
-      "# 必填字段说明：batchId=批次号, date=日期(YYYY-MM-DD), temperature=水温(℃), salinity=盐度, oxygen=溶氧(mg/L), feed=投喂量(kg), mortality=死亡率(%)",
-      "# 选填字段说明：poolId=池号, abnormal=异常情况(默认为'无')",
-      "B-260601,2026-08-01,P-03,28.0,22,6.2,20,0.5,无",
-      "B-260601,2026-08-02,P-03,27.8,21.5,6.0,19,0.3,无",
-      "B-260601,2026-08-03,P-03,27.5,22.5,5.8,21,0.4,无",
-      "B-260601,2026-08-04,P-03,28.1,22.0,5.9,20.5,0.3,少量浮头",
-      "B-260601,2026-08-05,P-03,27.9,21.8,6.1,20,0.2,无",
-    ];
-    const csv = lines.join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "records_template.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  previewBtn.onclick = async () => {
-    if (!fileInput.files.length) return;
-    const file = fileInput.files[0];
-    const csv = await file.text();
-    try {
-      const result = await api("/api/import/records/preview", {
-        method: "POST",
-        body: JSON.stringify({ csv }),
-      });
-      dataioPendingRecords = result.validRows || [];
-      renderDataIoPreview(result);
-    } catch (err) {
-      previewResult.classList.remove("hidden");
-      previewResult.innerHTML = `<div class="dataio-error">预检失败：${err.message}</div>`;
-    }
-  };
-}
-
-function renderDataIoPreview(result) {
-  const previewResult = document.getElementById("dataioPreviewResult");
-  previewResult.classList.remove("hidden");
-
-  const errorTypeLabels = {
+function getDataIoErrorTypeLabels() {
+  return {
     missing_field: "字段缺失",
     batch_not_found: "批次不存在",
     invalid_number: "数值非法",
@@ -4416,16 +4358,334 @@ function renderDataIoPreview(result) {
     duplicate_existing: "重复日期",
     duplicate_in_file: "文件内重复",
   };
+}
 
-  let html = '<div class="dataio-preview-summary">';
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function loadDataIoDraftList() {
+  const listEl = document.getElementById("dataioDraftList");
+  const sectionEl = document.getElementById("dataioDraftListSection");
+  if (!listEl || !sectionEl) return;
+  try {
+    const farmId = getEffectiveFarmId();
+    const url = farmId ? `/api/import/records/draft/list?farmId=${farmId}` : "/api/import/records/draft/list";
+    const list = await api(url);
+    if (!list || list.length === 0) {
+      sectionEl.classList.add("hidden");
+      return;
+    }
+    sectionEl.classList.remove("hidden");
+    listEl.innerHTML = list.map((d) => `
+      <div class="dataio-draft-item" data-draft-id="${d.id}" style="padding:10px;border:1px solid var(--line);border-radius:6px;margin-bottom:8px;background:#fff;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;">${escapeHtml(d.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">
+              创建：${new Date(d.createdAt).toLocaleString("zh-CN")}
+              ${d.updatedAt && d.updatedAt !== d.createdAt ? " · 更新：" + new Date(d.updatedAt).toLocaleString("zh-CN") : ""}
+            </div>
+            <div style="font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">
+              <span style="color:#39735a;">✅ 有效 ${d.validCount}</span>
+              <span style="color:#a84e35;">❌ 错误 ${d.errorCount}</span>
+              <span style="color:var(--muted);">📊 共 ${d.totalRows} 行</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button type="button" class="secondary dataio-draft-open" style="padding:4px 10px;font-size:12px;">打开</button>
+            <button type="button" class="dataio-draft-delete" style="padding:4px 10px;font-size:12px;background:#a84e35;color:#fff;">删除</button>
+          </div>
+        </div>
+      </div>
+    `).join("");
+    listEl.querySelectorAll(".dataio-draft-item").forEach((item) => {
+      const draftId = item.dataset.draftId;
+      item.querySelector(".dataio-draft-open").onclick = () => openDataIoDraft(draftId);
+      item.querySelector(".dataio-draft-delete").onclick = async () => {
+        if (!confirm("确定要删除这个导入草稿吗？删除后不可恢复。")) return;
+        try {
+          await api(`/api/import/records/draft/${encodeURIComponent(draftId)}`, {
+            method: "DELETE",
+            body: JSON.stringify({ operator: "" }),
+          });
+          await loadDataIoDraftList();
+        } catch (err) {
+          alert("删除草稿失败：" + err.message);
+        }
+      };
+    });
+  } catch (err) {
+    console.error("加载草稿列表失败", err);
+    sectionEl.classList.add("hidden");
+  }
+}
+
+async function openDataIoDraft(draftId) {
+  try {
+    const draft = await api(`/api/import/records/draft/${encodeURIComponent(draftId)}`);
+    dataioCurrentDraft = draft;
+    renderDataIoDraftDetail(draft);
+  } catch (err) {
+    alert("打开草稿失败：" + err.message);
+  }
+}
+
+function renderDataIoDraftDetail(draft) {
+  const previewResult = document.getElementById("dataioPreviewResult");
+  previewResult.classList.remove("hidden");
+
+  const errorTypeLabels = getDataIoErrorTypeLabels();
+  const cols = ["batchId", "date", "poolId", "temperature", "salinity", "oxygen", "feed", "mortality", "abnormal"];
+  const colLabels = ["批次", "日期", "池号", "水温", "盐度", "溶氧", "投喂kg", "死亡率%", "异常"];
+  const fieldLabels = {
+    batchId: "批次号", date: "日期", poolId: "池号", temperature: "水温℃",
+    salinity: "盐度", oxygen: "溶氧mg/L", feed: "投喂量kg", mortality: "死亡率%", abnormal: "异常情况",
+  };
+
+  let html = `<div class="dataio-draft-header" style="padding:12px;background:#eef5f4;border:1px solid var(--line);border-radius:6px;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:600;">📝 ${escapeHtml(draft.name)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">创建：${new Date(draft.createdAt).toLocaleString("zh-CN")} · 更新：${new Date(draft.updatedAt).toLocaleString("zh-CN")}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="secondary" id="dataioDraftRevalidateAll" style="padding:6px 12px;font-size:12px;">🔄 全部重新校验</button>
+        <button type="button" id="dataioDraftBackBtn" class="secondary" style="padding:6px 12px;font-size:12px;">← 返回草稿列表</button>
+      </div>
+    </div>
+  </div>`;
+
+  html += '<div class="dataio-preview-summary">';
+  html += `<div class="dataio-stat"><span>总行数</span><strong>${draft.totalRows}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-success"><span>有效行</span><strong>${draft.validCount}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-error"><span>错误行</span><strong>${draft.errorCount}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-warn"><span>可导入</span><strong>${draft.validCount}</strong></div>`;
+  html += "</div>";
+
+  html += `<div style="margin:10px 0;font-size:12px;color:var(--muted);">💡 提示：点击错误行的「编辑」按钮可修改字段值，修改后点击「重新校验」按钮单独校验该行。所有行都变为有效后即可确认导入。</div>`;
+
+  html += '<div class="dataio-preview-section"><h4>所有导入行（点击错误行的「编辑」修改后重新校验）</h4>';
+  html += '<div class="dataio-preview-table-wrap dataio-draft-table-wrap"><table class="dataio-preview-table dataio-draft-table"><thead><tr>';
+  html += "<th>行号</th><th>状态</th>";
+  colLabels.forEach((l) => { html += `<th>${l}</th>`; });
+  html += "<th>错误提示</th><th>操作</th>";
+  html += "</tr></thead><tbody>";
+
+  draft.rows.forEach((rowStatus, idx) => {
+    const data = rowStatus.isValid ? rowStatus.normalizedRow : rowStatus.originalRow;
+    const statusClass = rowStatus.isValid ? "dataio-row-valid" : "dataio-row-invalid";
+    const statusText = rowStatus.isValid ? "✅ 有效" : "❌ 错误";
+    const rowErrorsHtml = rowStatus.errors.map((e) => {
+      const typeLabel = errorTypeLabels[e.type] || e.type;
+      return `<div class="dataio-row-error-item"><span class="dataio-error-type">${typeLabel}</span> ${escapeHtml(e.message)}</div>`;
+    }).join("");
+
+    html += `<tr class="${statusClass}" data-idx="${idx}" data-row-num="${rowStatus.rowNum}">`;
+    html += `<td class="dataio-row-num">${rowStatus.rowNum}</td>`;
+    html += `<td class="dataio-row-status">${statusText}</td>`;
+    cols.forEach((c) => {
+      html += `<td class="dataio-cell" data-field="${c}">${escapeHtml(data?.[c] ?? "")}</td>`;
+    });
+    html += `<td class="dataio-row-errors">${rowErrorsHtml || "-"}</td>`;
+    html += `<td class="dataio-row-actions">
+      ${rowStatus.isValid
+        ? `<button type="button" class="secondary dataio-row-edit-btn" style="padding:3px 8px;font-size:11px;">编辑</button>`
+        : `<button type="button" class="dataio-row-edit-btn" style="padding:3px 8px;font-size:11px;background:#a84e35;color:#fff;">编辑并修正</button>`
+      }
+      <button type="button" class="secondary dataio-row-revalidate-btn hidden" style="padding:3px 8px;font-size:11px;margin-top:4px;">重新校验</button>
+    </td>`;
+    html += "</tr>";
+  });
+
+  html += "</tbody></table></div></div>";
+
+  html += '<div class="dataio-confirm-area">';
+  html += `<button type="button" id="dataioDraftConfirmBtn" class="dataio-confirm-btn" ${draft.validCount === 0 ? "disabled style='opacity:0.5;cursor:not-allowed;'" : ""}>✅ 确认导入 ${draft.validCount} 条有效记录</button>`;
+  html += `<button type="button" id="dataioDraftAbandonBtn" class="dataio-cancel-btn" style="background:#a84e35;">🗑 放弃草稿并删除</button>`;
+  html += "</div>";
+
+  previewResult.innerHTML = html;
+
+  previewResult.querySelectorAll(".dataio-row-edit-btn").forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const tr = btn.closest("tr");
+      startDataIoRowEdit(tr, draft);
+    };
+  });
+
+  const revalidateAllBtn = document.getElementById("dataioDraftRevalidateAll");
+  if (revalidateAllBtn) {
+    revalidateAllBtn.onclick = async () => {
+      revalidateAllBtn.disabled = true;
+      revalidateAllBtn.textContent = "校验中...";
+      try {
+        const updated = await api(`/api/import/records/draft/${encodeURIComponent(draft.id)}/revalidate`, {
+          method: "POST",
+        });
+        dataioCurrentDraft = updated;
+        renderDataIoDraftDetail(updated);
+      } catch (err) {
+        alert("重新校验失败：" + err.message);
+        revalidateAllBtn.disabled = false;
+        revalidateAllBtn.textContent = "🔄 全部重新校验";
+      }
+    };
+  }
+
+  const backBtn = document.getElementById("dataioDraftBackBtn");
+  if (backBtn) {
+    backBtn.onclick = async () => {
+      dataioCurrentDraft = null;
+      previewResult.classList.add("hidden");
+      await loadDataIoDraftList();
+    };
+  }
+
+  const confirmBtn = document.getElementById("dataioDraftConfirmBtn");
+  if (confirmBtn) {
+    confirmBtn.onclick = async () => {
+      if (draft.validCount === 0) {
+        alert("草稿中无有效记录可导入，请先修正错误行。");
+        return;
+      }
+      if (!confirm(`确定要导入 ${draft.validCount} 条有效记录吗？导入后草稿将被删除，数据将写入正式记录。`)) return;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "导入中...";
+      try {
+        const importResult = await api(`/api/import/records/draft/${encodeURIComponent(draft.id)}/confirm`, {
+          method: "POST",
+          body: JSON.stringify({ operator: "" }),
+        });
+        dataioCurrentDraft = null;
+        let msg = `<div class="dataio-success">导入完成：成功 <strong>${importResult.importedCount}</strong> 条，跳过 <strong>${importResult.skippedCount}</strong> 条${importResult.warningsGenerated > 0 ? "，自动生成预警 <strong>" + importResult.warningsGenerated + "</strong> 条" : ""}`;
+        if (importResult.skippedCount > 0) {
+          msg += "<div style='margin-top:8px;font-size:12px;'>跳过详情：" + importResult.skipped.map((s) => s.batchId + " " + s.date + "（" + s.reason + "）").join("；") + "</div>";
+        }
+        msg += `<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button><button type="button" id="dataioBackToDraftListBtn" class="secondary">返回草稿列表</button></div></div>`;
+        previewResult.innerHTML = msg;
+        document.getElementById("dataioFileInput").value = "";
+        document.getElementById("dataioPreviewBtn").disabled = true;
+        await load();
+        await loadDataIoDraftList();
+        const goBtn = document.getElementById("dataioGoRecordBtn");
+        if (goBtn) goBtn.onclick = () => setTab("record");
+        const backToListBtn = document.getElementById("dataioBackToDraftListBtn");
+        if (backToListBtn) backToListBtn.onclick = () => previewResult.classList.add("hidden");
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = `✅ 确认导入 ${draft.validCount} 条有效记录`;
+        alert("导入失败：" + err.message);
+      }
+    };
+  }
+
+  const abandonBtn = document.getElementById("dataioDraftAbandonBtn");
+  if (abandonBtn) {
+    abandonBtn.onclick = async () => {
+      if (!confirm("确定要放弃并删除这个导入草稿吗？所有未确认的数据将丢失，但不会影响正式数据。")) return;
+      try {
+        await api(`/api/import/records/draft/${encodeURIComponent(draft.id)}`, {
+          method: "DELETE",
+          body: JSON.stringify({ operator: "" }),
+        });
+        dataioCurrentDraft = null;
+        previewResult.classList.add("hidden");
+        document.getElementById("dataioFileInput").value = "";
+        document.getElementById("dataioPreviewBtn").disabled = true;
+        await loadDataIoDraftList();
+      } catch (err) {
+        alert("放弃草稿失败：" + err.message);
+      }
+    };
+  }
+}
+
+function startDataIoRowEdit(tr, draft) {
+  const idx = parseInt(tr.dataset.idx, 10);
+  const rowNum = parseInt(tr.dataset.rowNum, 10);
+  const rowStatus = draft.rows[idx];
+  const data = rowStatus.isValid ? rowStatus.normalizedRow : rowStatus.originalRow;
+  const cols = ["batchId", "date", "poolId", "temperature", "salinity", "oxygen", "feed", "mortality", "abnormal"];
+  const fieldLabels = {
+    batchId: "批次号", date: "日期", poolId: "池号", temperature: "水温℃",
+    salinity: "盐度", oxygen: "溶氧mg/L", feed: "投喂量kg", mortality: "死亡率%", abnormal: "异常情况",
+  };
+  const fieldTypes = {
+    batchId: "text", date: "date", poolId: "text", temperature: "number",
+    salinity: "number", oxygen: "number", feed: "number", mortality: "number", abnormal: "text",
+  };
+  const erroredFields = new Set(rowStatus.errors.map((e) => e.field));
+
+  const cells = tr.querySelectorAll(".dataio-cell");
+  cells.forEach((cell) => {
+    const field = cell.dataset.field;
+    const currentValue = data?.[field] ?? "";
+    const isErrored = erroredFields.has(field);
+    const inputType = fieldTypes[field] || "text";
+    const stepAttr = inputType === "number" ? 'step="any"' : "";
+    cell.innerHTML = `<input type="${inputType}" ${stepAttr} data-field="${field}" 
+      class="dataio-edit-input ${isErrored ? "dataio-input-error" : ""}" 
+      value="${escapeHtml(currentValue)}" 
+      style="width:100%;padding:4px 6px;font-size:12px;${isErrored ? "border-color:#a84e35;background:#fef6f4;" : ""}"
+      placeholder="${fieldLabels[field] || field}" />`;
+  });
+
+  const actionsCell = tr.querySelector(".dataio-row-actions");
+  const revalidateBtn = actionsCell.querySelector(".dataio-row-revalidate-btn");
+  const editBtn = actionsCell.querySelector(".dataio-row-edit-btn");
+  editBtn.classList.add("hidden");
+  revalidateBtn.classList.remove("hidden");
+  revalidateBtn.textContent = "💾 保存并校验";
+  revalidateBtn.onclick = async () => {
+    const inputs = tr.querySelectorAll(".dataio-edit-input");
+    const updatedRow = {};
+    inputs.forEach((inp) => {
+      updatedRow[inp.dataset.field] = inp.value;
+    });
+    revalidateBtn.disabled = true;
+    revalidateBtn.textContent = "校验中...";
+    try {
+      const result = await api(`/api/import/records/draft/${encodeURIComponent(draft.id)}/row/${rowNum}`, {
+        method: "PUT",
+        body: JSON.stringify({ row: updatedRow }),
+      });
+      draft.rows[idx] = result.rowStatus;
+      draft.validCount = result.validCount;
+      draft.errorCount = result.errorCount;
+      dataioCurrentDraft = draft;
+      renderDataIoDraftDetail(draft);
+    } catch (err) {
+      alert("校验失败：" + err.message);
+      revalidateBtn.disabled = false;
+      revalidateBtn.textContent = "💾 保存并校验";
+    }
+  };
+}
+
+function renderDataIoPreviewQuickMode(result) {
+  const previewResult = document.getElementById("dataioPreviewResult");
+  previewResult.classList.remove("hidden");
+
+  const errorTypeLabels = getDataIoErrorTypeLabels();
+
+  let html = '<div style="padding:10px;background:#eef5f4;border:1px solid var(--line);border-radius:6px;margin-bottom:12px;font-size:12px;"><strong>⚡ 快速模式：</strong>将直接导入下方所有有效行，错误行将被跳过。如需修正错误行，请切换到「草稿模式」。</div>';
+  html += '<div class="dataio-preview-summary">';
   html += `<div class="dataio-stat"><span>总行数</span><strong>${result.totalRows}</strong></div>`;
   html += `<div class="dataio-stat dataio-stat-success"><span>有效行</span><strong>${result.validCount}</strong></div>`;
-  html += `<div class="dataio-stat dataio-stat-error"><span>错误行</span><strong>${result.errorCount}</strong></div>`;
+  html += `<div class="dataio-stat dataio-stat-error"><span>错误行(跳过)</span><strong>${result.errorCount}</strong></div>`;
   html += `<div class="dataio-stat dataio-stat-warn"><span>警告</span><strong>${result.warningCount}</strong></div>`;
   html += "</div>";
 
   if (result.errors.length > 0) {
-    html += '<div class="dataio-errors-section"><h4>错误详情</h4><div class="dataio-error-list">';
+    html += '<div class="dataio-errors-section"><h4>错误详情（这些行将被跳过，如需修正请使用草稿模式）</h4><div class="dataio-error-list">';
     result.errors.forEach((e) => {
       const typeLabel = errorTypeLabels[e.type] || e.type;
       html += `<div class="dataio-error-item dataio-error-type-${e.type}"><span class="dataio-error-type">${typeLabel}</span><span class="dataio-error-msg">${e.message}</span></div>`;
@@ -4433,16 +4693,24 @@ function renderDataIoPreview(result) {
     html += "</div></div>";
   }
 
-  if (result.warnings.length > 0) {
-    html += '<div class="dataio-warnings-section"><h4>警告详情</h4><div class="dataio-warning-list">';
-    result.warnings.forEach((w) => {
-      const typeLabel = errorTypeLabels[w.type] || w.type;
-      html += `<div class="dataio-warning-item"><span class="dataio-error-type">${typeLabel}</span><span class="dataio-error-msg">${w.message}</span></div>`;
+  if (result.allRowStatuses && result.allRowStatuses.length > 0) {
+    html += '<div class="dataio-preview-section"><h4>所有行预览</h4>';
+    html += '<div class="dataio-preview-table-wrap"><table class="dataio-preview-table"><thead><tr>';
+    const cols = ["batchId", "date", "poolId", "temperature", "salinity", "oxygen", "feed", "mortality", "abnormal"];
+    const colLabels = ["批次", "日期", "池号", "水温", "盐度", "溶氧", "投喂kg", "死亡率%", "异常"];
+    html += "<th>行号</th><th>状态</th>";
+    colLabels.forEach((l) => { html += `<th>${l}</th>`; });
+    html += "</tr></thead><tbody>";
+    result.allRowStatuses.forEach((rowStatus) => {
+      const data = rowStatus.isValid ? rowStatus.normalizedRow : rowStatus.originalRow;
+      html += `<tr class="${rowStatus.isValid ? "dataio-row-valid" : "dataio-row-invalid"}">`;
+      html += `<td>${rowStatus.rowNum}</td>`;
+      html += `<td>${rowStatus.isValid ? "✅" : "❌"}</td>`;
+      cols.forEach((c) => { html += `<td>${escapeHtml(data?.[c] ?? "")}</td>`; });
+      html += "</tr>";
     });
-    html += "</div></div>";
-  }
-
-  if (result.preview.length > 0) {
+    html += "</tbody></table></div></div>";
+  } else if (result.preview.length > 0) {
     html += '<div class="dataio-preview-section"><h4>有效数据预览（最多20行）</h4>';
     html += '<div class="dataio-preview-table-wrap"><table class="dataio-preview-table"><thead><tr>';
     const cols = ["batchId", "date", "poolId", "temperature", "salinity", "oxygen", "feed", "mortality", "abnormal"];
@@ -4451,7 +4719,7 @@ function renderDataIoPreview(result) {
     html += "</tr></thead><tbody>";
     result.preview.forEach((row) => {
       html += "<tr>";
-      cols.forEach((c) => { html += `<td>${row[c] != null ? row[c] : ""}</td>`; });
+      cols.forEach((c) => { html += `<td>${escapeHtml(row[c] != null ? row[c] : "")}</td>`; });
       html += "</tr>";
     });
     html += "</tbody></table></div></div>";
@@ -4506,6 +4774,116 @@ function renderDataIoPreview(result) {
       document.getElementById("dataioPreviewBtn").disabled = true;
     };
   }
+}
+
+function bindDataIoEvents() {
+  dataioPendingRecords = [];
+  dataioCurrentDraft = null;
+  const fileInput = document.getElementById("dataioFileInput");
+  const previewBtn = document.getElementById("dataioPreviewBtn");
+  const templateBtn = document.getElementById("dataioDownloadTemplate");
+  const previewResult = document.getElementById("dataioPreviewResult");
+  const draftListSection = document.getElementById("dataioDraftListSection");
+  const refreshDraftListBtn = document.getElementById("dataioRefreshDraftList");
+
+  document.querySelectorAll(".dataio-export-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const type = btn.dataset.export;
+      const farmId = getEffectiveFarmId();
+      const params = farmId ? "?farmId=" + farmId : "";
+      window.open("/api/export/" + type + params, "_blank");
+    };
+  });
+
+  document.querySelectorAll(".dataio-mode-btn").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll(".dataio-mode-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      dataioDraftMode = btn.dataset.mode;
+      if (dataioDraftMode === "draft") {
+        loadDataIoDraftList();
+      } else {
+        if (draftListSection) draftListSection.classList.add("hidden");
+      }
+      previewResult.classList.add("hidden");
+      dataioCurrentDraft = null;
+      dataioPendingRecords = [];
+      fileInput.value = "";
+      previewBtn.disabled = true;
+      previewBtn.textContent = dataioDraftMode === "draft" ? "保存为草稿" : "预检导入";
+    };
+  });
+
+  if (refreshDraftListBtn) {
+    refreshDraftListBtn.onclick = loadDataIoDraftList;
+  }
+
+  if (dataioDraftMode === "draft") {
+    loadDataIoDraftList();
+  }
+  previewBtn.textContent = dataioDraftMode === "draft" ? "保存为草稿" : "预检导入";
+
+  fileInput.onchange = () => {
+    previewBtn.disabled = !fileInput.files.length;
+    previewResult.classList.add("hidden");
+    dataioPendingRecords = [];
+    dataioCurrentDraft = null;
+  };
+
+  templateBtn.onclick = () => {
+    const lines = [
+      "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal",
+      "# 必填字段说明：batchId=批次号, date=日期(YYYY-MM-DD), temperature=水温(℃), salinity=盐度, oxygen=溶氧(mg/L), feed=投喂量(kg), mortality=死亡率(%)",
+      "# 选填字段说明：poolId=池号, abnormal=异常情况(默认为'无')",
+      "B-260601,2026-08-01,P-03,28.0,22,6.2,20,0.5,无",
+      "B-260601,2026-08-02,P-03,27.8,21.5,6.0,19,0.3,无",
+      "B-260601,2026-08-03,P-03,27.5,22.5,5.8,21,0.4,无",
+      "B-260601,2026-08-04,P-03,28.1,22.0,5.9,20.5,0.3,少量浮头",
+      "B-260601,2026-08-05,P-03,27.9,21.8,6.1,20,0.2,无",
+    ];
+    const csv = lines.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "records_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  previewBtn.onclick = async () => {
+    if (!fileInput.files.length) return;
+    const file = fileInput.files[0];
+    const csv = await file.text();
+    previewBtn.disabled = true;
+    const originalText = previewBtn.textContent;
+    previewBtn.textContent = "处理中...";
+    try {
+      if (dataioDraftMode === "draft") {
+        const farmId = getEffectiveFarmId();
+        const draft = await api("/api/import/records/draft/create", {
+          method: "POST",
+          body: JSON.stringify({ csv, fileName: file.name, farmId, operator: "" }),
+        });
+        dataioCurrentDraft = draft;
+        renderDataIoDraftDetail(draft);
+        await loadDataIoDraftList();
+      } else {
+        const result = await api("/api/import/records/preview", {
+          method: "POST",
+          body: JSON.stringify({ csv }),
+        });
+        dataioPendingRecords = result.validRows || [];
+        renderDataIoPreviewQuickMode(result);
+      }
+    } catch (err) {
+      previewResult.classList.remove("hidden");
+      previewResult.innerHTML = `<div class="dataio-error">处理失败：${err.message}</div>`;
+    } finally {
+      previewBtn.disabled = false;
+      previewBtn.textContent = originalText;
+    }
+  };
 }
 
 function setTab(tab) {

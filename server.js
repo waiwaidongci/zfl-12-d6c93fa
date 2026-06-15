@@ -80,6 +80,16 @@ async function loadDb() {
     dbNeedsSave = true;
   }
 
+  if (!db.importDrafts) {
+    db.importDrafts = [];
+    dbNeedsSave = true;
+  }
+
+  if (!db.warnings) {
+    db.warnings = [];
+    dbNeedsSave = true;
+  }
+
   if (dbNeedsSave) {
     await writeFile(dbPath, JSON.stringify(db, null, 2));
   }
@@ -133,6 +143,7 @@ function filterStateByFarm(db, farmId) {
     "inventories",
     "lineages",
     "opLogs",
+    "importDrafts",
   ];
   const scopedDb = { ...db };
   for (const collection of scopedCollections) {
