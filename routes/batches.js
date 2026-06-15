@@ -106,12 +106,15 @@ export function batchTrace(db, batchId) {
     totalDifference: 0,
   };
 
+  const activeOrders = orders.filter((o) => o.status !== "cancelled" && o.status !== "completed");
   const orderStats = {
     totalOrders: orders.length,
     pendingOrders: orders.filter((o) => o.status === "pending").length,
     partialOrders: orders.filter((o) => o.status === "partial").length,
     completedOrders: orders.filter((o) => o.status === "completed").length,
     cancelledOrders: orders.filter((o) => o.status === "cancelled").length,
+    approachingOrders: activeOrders.filter((o) => o.isApproaching).length,
+    overdueOrders: activeOrders.filter((o) => o.isOverdue).length,
     totalOrderQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "orderQuantity"),
     totalShippedQuantity: shippedCount,
     totalRemainingQuantity: sum(orders.filter((o) => o.status !== "cancelled"), "remainingQuantity"),

@@ -52,7 +52,7 @@ const forms = {
   warning:
     '<h2>水质预警中心</h2><div class="warning-toolbar"><select id="warningLevelFilter"><option value="">全部等级</option><option value="red">红色预警</option><option value="yellow">黄色预警</option></select><select id="warningStatusFilter"><option value="">全部状态</option><option value="pending">待处理</option><option value="processing">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select><select id="warningBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" class="secondary" id="thresholdConfigBtn">阈值配置</button></div><div class="warning-stats" id="warningStats"></div><div class="grid" id="warningList"></div>',
   order:
-    '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><div class="spacer"></div><button type="button" class="secondary" id="quickSaleBtn">快速销售（旧模式）</button><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
+    '<h2>订单管理</h2><div class="order-toolbar"><select id="orderBatchFilter"><option value="">全部批次</option></select><select id="orderStatusFilter"><option value="">全部状态</option><option value="pending">待发货</option><option value="partial">部分发货</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select><span class="order-date-label">交付日期</span><input type="date" id="orderDeliveryStart" placeholder="开始日期"><span class="order-date-sep">~</span><input type="date" id="orderDeliveryEnd" placeholder="结束日期"><div class="spacer"></div><button type="button" class="secondary" id="quickSaleBtn">快速销售（旧模式）</button><button type="button" id="addOrderBtn">+ 新增订单</button></div><div class="order-stats" id="orderStats"></div><div class="grid" id="orderList"></div>',
   shipment:
     '<h2>发货管理</h2><div class="shipment-toolbar"><select id="shipmentBatchFilter"><option value="">全部批次</option></select><select id="shipmentStatusFilter"><option value="">全部订单</option></select><div class="spacer"></div><button type="button" id="addShipmentBtn">+ 新增发货</button></div><div class="shipment-stats" id="shipmentStats"></div><div class="grid" id="shipmentList"></div>',
   dataio:
@@ -195,6 +195,8 @@ async function renderTrace() {
     <div class="stat"><span>待发货</span><strong>${orderStats.pendingOrders || 0} 单</strong></div>
     <div class="stat"><span>部分发货</span><strong>${orderStats.partialOrders || 0} 单</strong></div>
     <div class="stat"><span>已完成</span><strong>${orderStats.completedOrders || 0} 单</strong></div>
+    <div class="stat"><span>临期订单</span><strong class="order-stat-approaching">${orderStats.approachingOrders || 0} 单</strong></div>
+    <div class="stat"><span>逾期订单</span><strong class="order-stat-overdue">${orderStats.overdueOrders || 0} 单</strong></div>
     <div class="stat"><span>订单总量</span><strong>${(orderStats.totalOrderQuantity || 0).toLocaleString()} 尾</strong></div>
     <div class="stat"><span>订单金额</span><strong>${(orderStats.totalOrderAmount || 0).toFixed(2)} 元</strong></div>
     <div class="stat"><span>已发货</span><strong>${(orderStats.totalShippedQuantity || 0).toLocaleString()} 尾</strong></div>
@@ -308,15 +310,30 @@ async function renderTrace() {
     ...(trace.orders || []).map((e) => {
       const customerName = e.customerInfo?.name || e.customerName || "未知客户";
       const statusLabel = ORDER_STATUSES[e.status]?.label || e.status;
+      let deliveryText = "";
+      if (e.daysRemaining !== null) {
+        if (e.isOverdue) {
+          deliveryText = `，交付日期 ${e.deliveryDate}（逾期 ${Math.abs(e.daysRemaining)} 天）`;
+        } else if (e.isApproaching) {
+          deliveryText = `，交付日期 ${e.deliveryDate}（还剩 ${e.daysRemaining} 天）`;
+        } else {
+          deliveryText = `，交付日期 ${e.deliveryDate}（还剩 ${e.daysRemaining} 天）`;
+        }
+      } else if (e.deliveryDate) {
+        deliveryText = `，交付日期 ${e.deliveryDate}`;
+      }
       return {
         date: e.createdAt.split("T")[0],
         title: "销售订单",
-        detail: `${customerName} 订购 ${e.orderQuantity.toLocaleString()} 尾，单价 ${Number(e.unitPrice).toFixed(4)} 元/尾，金额 ¥${e.totalAmount.toFixed(2)}，交付日期 ${e.deliveryDate || "-"}，状态：${statusLabel}`,
+        detail: `${customerName} 订购 ${e.orderQuantity.toLocaleString()} 尾，单价 ${Number(e.unitPrice).toFixed(4)} 元/尾，金额 ¥${e.totalAmount.toFixed(2)}${deliveryText}，状态：${statusLabel}`,
         orderId: e.id,
         orderStatus: e.status,
         orderQuantity: e.orderQuantity,
         orderShipped: e.shippedQuantity,
         orderRemaining: e.remainingQuantity,
+        isOverdue: e.isOverdue,
+        isApproaching: e.isApproaching,
+        daysRemaining: e.daysRemaining,
       };
     }),
     ...(trace.shipments || []).map((e) => {
@@ -428,11 +445,23 @@ async function renderTrace() {
         if (e.orderId) {
           const statusInfo = ORDER_STATUSES[e.orderStatus] || { label: e.orderStatus, class: "" };
           const progress = e.orderQuantity > 0 ? Math.round((e.orderShipped / e.orderQuantity) * 100) : 0;
+          let deliveryBadge = "";
+          let eventClass = "event-order";
+          if (e.isOverdue) {
+            eventClass += " event-order-overdue";
+            deliveryBadge = '<span class="order-delivery-badge order-delivery-overdue">逾期 ' + Math.abs(e.daysRemaining) + ' 天</span>';
+          } else if (e.isApproaching) {
+            eventClass += " event-order-approaching";
+            deliveryBadge = '<span class="order-delivery-badge order-delivery-approaching">还剩 ' + e.daysRemaining + ' 天</span>';
+          }
           return `
-            <div class="event event-order" data-order-id="${e.orderId}" style="cursor:pointer;">
+            <div class="event ${eventClass}" data-order-id="${e.orderId}" style="cursor:pointer;">
               <div class="event-order-header">
                 <b>${e.date} · ${e.title}</b>
-                <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${deliveryBadge}
+                  <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
+                </div>
               </div>
               <div class="meta">${e.detail}</div>
               <div class="order-progress" style="margin-top:8px;">
@@ -1759,15 +1788,22 @@ function renderOrderStats() {
   const orders = filterByFarm(db.orders || []);
   const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
   const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
+  const deliveryStart = document.getElementById("orderDeliveryStart")?.value || "";
+  const deliveryEnd = document.getElementById("orderDeliveryEnd")?.value || "";
   let filtered = orders;
   if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
   if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
+  if (deliveryStart) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate >= deliveryStart);
+  if (deliveryEnd) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate <= deliveryEnd);
 
   const total = filtered.length;
   const pending = filtered.filter((o) => o.status === "pending").length;
   const partial = filtered.filter((o) => o.status === "partial").length;
   const completed = filtered.filter((o) => o.status === "completed").length;
   const cancelled = filtered.filter((o) => o.status === "cancelled").length;
+  const activeOrders = filtered.filter((o) => o.status !== "cancelled" && o.status !== "completed");
+  const approaching = activeOrders.filter((o) => o.isApproaching).length;
+  const overdue = activeOrders.filter((o) => o.isOverdue).length;
   const totalQty = filtered
     .filter((o) => o.status !== "cancelled")
     .reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
@@ -1781,6 +1817,8 @@ function renderOrderStats() {
     ["部分发货", partial + " 单"],
     ["已完成", completed + " 单"],
     ["已取消", cancelled + " 单"],
+    ["临期订单", '<span class="order-stat-approaching">' + approaching + " 单</span>"],
+    ["逾期订单", '<span class="order-stat-overdue">' + overdue + " 单</span>"],
     ["订购总量", totalQty.toLocaleString() + " 尾"],
     ["订单总额", totalAmount.toFixed(2) + " 元"],
   ];
@@ -1794,9 +1832,13 @@ function renderOrderList() {
   const orders = filterByFarm(db.orders || []);
   const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
   const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
+  const deliveryStart = document.getElementById("orderDeliveryStart")?.value || "";
+  const deliveryEnd = document.getElementById("orderDeliveryEnd")?.value || "";
   let filtered = orders;
   if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
   if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
+  if (deliveryStart) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate >= deliveryStart);
+  if (deliveryEnd) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate <= deliveryEnd);
   filtered = [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const list = document.getElementById("orderList");
@@ -1811,13 +1853,22 @@ function renderOrderList() {
       const customerName = o.customerInfo?.name || o.customerName || "未知客户";
       const batch = db.batches?.find((b) => b.id === o.batchId);
       const species = batch?.species || "";
+      let deliveryClass = "";
+      let deliveryBadge = "";
+      if (o.isOverdue) {
+        deliveryClass = "order-overdue";
+        deliveryBadge = '<span class="order-delivery-badge order-delivery-overdue">逾期 ' + Math.abs(o.daysRemaining) + " 天</span>";
+      } else if (o.isApproaching) {
+        deliveryClass = "order-approaching";
+        deliveryBadge = '<span class="order-delivery-badge order-delivery-approaching">还剩 ' + o.daysRemaining + " 天</span>";
+      }
       return `
-    <div class="order-card" data-id="${o.id}">
+    <div class="order-card ${deliveryClass}" data-id="${o.id}">
       <div class="order-header">
         <span class="status-badge ${statusInfo.class}">${statusInfo.label}</span>
         <span class="order-batch">${o.batchId}${species ? " · " + species : ""}</span>
       </div>
-      <div class="order-id">${o.id}</div>
+      <div class="order-id">${o.id}${deliveryBadge}</div>
       <div class="order-customer"><strong>${customerName}</strong></div>
       ${o.customerInfo?.phone ? `<div class="order-contact">${o.customerInfo.contact || ""} · ${o.customerInfo.phone}</div>` : ""}
       <div class="order-info" style="margin-top:10px;">
@@ -1827,7 +1878,7 @@ function renderOrderList() {
         <div class="row"><span class="label">单价</span><span>${Number(o.unitPrice).toFixed(4)} 元/尾</span></div>
         <div class="row"><span class="label">订单金额</span><strong>¥${o.totalAmount.toFixed(2)}</strong></div>
         <div class="row"><span class="label">已发金额</span><span>¥${o.shippedAmount.toFixed(2)}</span></div>
-        <div class="row"><span class="label">交付日期</span><span>${o.deliveryDate || "-"}</span></div>
+        <div class="row"><span class="label">交付日期</span><span class="${o.isOverdue ? "order-delivery-overdue-text" : o.isApproaching ? "order-delivery-approaching-text" : ""}">${o.deliveryDate || "-"}${o.daysRemaining !== null ? " (" + (o.isOverdue ? "逾期" + Math.abs(o.daysRemaining) + "天" : "还剩" + o.daysRemaining + "天") + ")" : ""}</span></div>
         <div class="row"><span class="label">创建时间</span><span>${new Date(o.createdAt).toLocaleString("zh-CN")}</span></div>
       </div>
       ${o.note ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${o.note}</div>` : ""}
@@ -2004,10 +2055,14 @@ function bindOrderEvents() {
   const quickSaleBtn = document.getElementById("quickSaleBtn");
   const batchFilter = document.getElementById("orderBatchFilter");
   const statusFilter = document.getElementById("orderStatusFilter");
+  const deliveryStart = document.getElementById("orderDeliveryStart");
+  const deliveryEnd = document.getElementById("orderDeliveryEnd");
   if (addBtn) addBtn.onclick = (e) => { e.preventDefault(); openOrderModal(null, batchSelect.value); };
   if (quickSaleBtn) quickSaleBtn.onclick = (e) => { e.preventDefault(); setTab("sale"); };
   if (batchFilter) batchFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
   if (statusFilter) statusFilter.onchange = () => { renderOrderStats(); renderOrderList(); };
+  if (deliveryStart) deliveryStart.onchange = () => { renderOrderStats(); renderOrderList(); };
+  if (deliveryEnd) deliveryEnd.onchange = () => { renderOrderStats(); renderOrderList(); };
 }
 
 function renderShipmentStats() {

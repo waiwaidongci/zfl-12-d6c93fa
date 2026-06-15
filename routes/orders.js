@@ -1,6 +1,7 @@
 import { writeLog } from "../utils/audit-log.js";
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
+const APPROACHING_THRESHOLD_DAYS = 7;
 
 function getDefaultFarmId(db) {
   if (db.farms && db.farms.length > 0) {
@@ -88,6 +89,42 @@ function sanitizeOrder(input, existing = null) {
   };
 }
 
+function getDeliveryDateInfo(deliveryDate, status) {
+  if (!deliveryDate || status === "cancelled" || status === "completed") {
+    return {
+      daysRemaining: null,
+      isOverdue: false,
+      isApproaching: false,
+      deliveryStatus: "normal",
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const delivery = new Date(deliveryDate);
+  delivery.setHours(0, 0, 0, 0);
+
+  const diffTime = delivery.getTime() - today.getTime();
+  const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  const isOverdue = daysRemaining < 0;
+  const isApproaching = daysRemaining >= 0 && daysRemaining <= APPROACHING_THRESHOLD_DAYS;
+
+  let deliveryStatus = "normal";
+  if (isOverdue) {
+    deliveryStatus = "overdue";
+  } else if (isApproaching) {
+    deliveryStatus = "approaching";
+  }
+
+  return {
+    daysRemaining,
+    isOverdue,
+    isApproaching,
+    deliveryStatus,
+  };
+}
+
 function enrichOrder(order, db) {
   const customers = db.customers || [];
   let customerInfo = null;
@@ -123,6 +160,8 @@ function enrichOrder(order, db) {
     }
   }
 
+  const deliveryInfo = getDeliveryDateInfo(order.deliveryDate, status);
+
   return {
     ...order,
     status,
@@ -133,6 +172,7 @@ function enrichOrder(order, db) {
     shippedAmount: Number(shippedAmount.toFixed(2)),
     shipmentCount: shipments.length,
     statusLabel: ORDER_STATUS_LABELS[status] || status,
+    ...deliveryInfo,
   };
 }
 
@@ -144,11 +184,27 @@ export function createOrdersRouter(helpers) {
       const db = await loadDb();
       const url = new URL(req.url, `http://${req.headers.host}`);
       const farmId = url.searchParams.get("farmId");
+      const batchId = url.searchParams.get("batchId");
+      const status = url.searchParams.get("status");
+      const deliveryDateStart = url.searchParams.get("deliveryDateStart");
+      const deliveryDateEnd = url.searchParams.get("deliveryDateEnd");
       let orders = db.orders || [];
       if (farmId) {
         orders = orders.filter((o) => o.farmId === farmId);
       }
-      const enriched = orders.map((o) => enrichOrder(o, db));
+      if (batchId) {
+        orders = orders.filter((o) => o.batchId === batchId);
+      }
+      if (deliveryDateStart) {
+        orders = orders.filter((o) => o.deliveryDate && o.deliveryDate >= deliveryDateStart);
+      }
+      if (deliveryDateEnd) {
+        orders = orders.filter((o) => o.deliveryDate && o.deliveryDate <= deliveryDateEnd);
+      }
+      let enriched = orders.map((o) => enrichOrder(o, db));
+      if (status) {
+        enriched = enriched.filter((o) => o.status === status);
+      }
       return sendJson(res, 200, enriched);
     }
 
@@ -348,7 +404,9 @@ export function createOrdersRouter(helpers) {
 export {
   ORDER_STATUSES,
   ORDER_STATUS_LABELS,
+  APPROACHING_THRESHOLD_DAYS,
   validateOrder,
   sanitizeOrder,
   enrichOrder,
+  getDeliveryDateInfo,
 };
