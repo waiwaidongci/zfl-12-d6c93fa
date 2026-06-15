@@ -335,6 +335,7 @@ export function migrateTransfersToLineage(db) {
 function validateNoCycle(db, sources, targets, type, date) {
   const targetIds = targets.map((t) => t.batchId);
   const sourceIds = sources.map((s) => s.batchId);
+  const lineages = db.lineages || [];
 
   const onlySelf = sourceIds.length === 1 && targetIds.length === 1 && sourceIds[0] === targetIds[0];
   if (onlySelf && type !== "mix") {
@@ -347,7 +348,51 @@ function validateNoCycle(db, sources, targets, type, date) {
     return `操作无效：来源和目标数量都为0`;
   }
 
+  const candidateEdges = [];
+  for (const src of sourceIds) {
+    for (const tgt of targetIds) {
+      if (src !== tgt) {
+        candidateEdges.push({ from: src, to: tgt });
+      }
+    }
+  }
+
+  for (const edge of candidateEdges) {
+    if (hasTimedPath(lineages, edge.to, edge.from, date, true)) {
+      return `存在循环依赖：目标批次 ${edge.to} 已在 ${date} 及之前通过血缘链追溯到来源批次 ${edge.from}，新增操作会形成闭环`;
+    }
+    if (hasTimedPath(lineages, edge.from, edge.to, date, false)) {
+      return `存在循环依赖：来源批次 ${edge.from} 已在 ${date} 及之后流向目标批次 ${edge.to}，新增操作会形成闭环`;
+    }
+  }
+
   return null;
+}
+
+function hasTimedPath(lineages, fromBatchId, toBatchId, boundaryDate, beforeBoundary) {
+  const queue = [fromBatchId];
+  const visited = new Set([fromBatchId]);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const relatedLineages = lineages.filter((l) =>
+      l.sources.some((s) => s.batchId === current) &&
+      (beforeBoundary ? l.date <= boundaryDate : l.date >= boundaryDate)
+    );
+
+    for (const lin of relatedLineages) {
+      for (const tgt of lin.targets) {
+        if (tgt.batchId === current) continue;
+        if (tgt.batchId === toBatchId) return true;
+        if (!visited.has(tgt.batchId)) {
+          visited.add(tgt.batchId);
+          queue.push(tgt.batchId);
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 function validateDateOrder(db, sources, targets, date) {
