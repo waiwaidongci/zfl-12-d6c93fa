@@ -390,6 +390,11 @@ async function test() {
     assertEqual(draftsAfter.length, 0, "确认导入后草稿已被删除");
     assert(dbAfterConfirm.importDrafts.length === draftsBefore - 1, "草稿总数减少 1 个");
 
+    const warningsAfter = (dbAfterConfirm.warnings || []).length;
+    const newWarnings = warningsAfter - warningsBefore;
+    assertEqual(newWarnings, confirmData.warningsGenerated || 0, "预警不重复落库：实际新增预警数与响应一致");
+    assert(newWarnings <= 3, "预警数量不超过记录数（不会重复）");
+
     const newLogs = dbAfterConfirm.opLogs.slice(logsBefore);
     assert(newLogs.length >= 2, "至少产生 2 条操作日志（record_create + import_draft_confirm）");
     const hasCreateLog = newLogs.some((l) => l.action === "record_create");
@@ -526,6 +531,57 @@ async function test() {
     expectedRequired.forEach((f) => {
       assert(RECORD_SCHEMA.required.includes(f), `required 包含 ${f}`);
     });
+    passed++;
+
+    console.log("\n21. 验证预警不重复落库（草稿确认 + 快速模式）");
+    const warningCsv =
+      "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal\n" +
+      `${existingBatchId},2026-09-01,P-01,36,24,2,15,5,浮头\n` +
+      `${existingBatchId},2026-09-02,P-01,37,25,1.5,16,6,死苗\n` +
+      `${existingBatchId},2026-09-03,P-01,26.5,24,6.8,15,0.2,无`;
+    const { res: createWarnRes, data: createWarnData } = await api("/api/import/records/draft/create", {
+      method: "POST",
+      body: JSON.stringify({
+        csv: warningCsv,
+        fileName: "warning_test.csv",
+        farmId: "FARM-DEFAULT",
+        operator: "测试用户",
+      }),
+    });
+    assertEqual(createWarnRes.status, 201, "创建预警测试草稿成功");
+    const warnDraftId = createWarnData.id;
+
+    const dbBeforeWarn = await loadDb();
+    const warningsBeforeCount = (dbBeforeWarn.warnings || []).length;
+
+    const { res: confirmWarnRes, data: confirmWarnData } = await api(
+      `/api/import/records/draft/${encodeURIComponent(warnDraftId)}/confirm`,
+      {
+        method: "POST",
+        body: JSON.stringify({ operator: "测试用户" }),
+      }
+    );
+    assertEqual(confirmWarnRes.status, 201, "预警草稿确认成功");
+    assert(confirmWarnData.warningsGenerated >= 2, "至少生成 2 条预警（前 2 条超限）");
+
+    const dbAfterWarn = await loadDb();
+    const warningsAfterCount = (dbAfterWarn.warnings || []).length;
+    const newWarningCount = warningsAfterCount - warningsBeforeCount;
+    assertEqual(newWarningCount, confirmWarnData.warningsGenerated, "草稿确认：实际新增预警数与响应一致，无重复落库");
+
+    const quickWarnRows = [
+      { batchId: existingBatchId, date: "2026-09-10", poolId: "P-01", temperature: 36.5, salinity: 24, oxygen: 1.8, feed: 15, mortality: 4, abnormal: "浮头" },
+      { batchId: existingBatchId, date: "2026-09-11", poolId: "P-01", temperature: 27, salinity: 25, oxygen: 6.5, feed: 16, mortality: 0.3, abnormal: "无" },
+    ];
+    const warningsBeforeQuick = (await loadDb()).warnings?.length || 0;
+    const { res: quickWarnRes, data: quickWarnData } = await api("/api/import/records/confirm", {
+      method: "POST",
+      body: JSON.stringify({ records: quickWarnRows, operator: "测试用户" }),
+    });
+    assertEqual(quickWarnRes.status, 201, "快速模式导入成功");
+    const warningsAfterQuick = (await loadDb()).warnings?.length || 0;
+    const quickNewWarnings = warningsAfterQuick - warningsBeforeQuick;
+    assertEqual(quickNewWarnings, quickWarnData.warningsGenerated, "快速模式：实际新增预警数与响应一致，无重复落库");
     passed++;
 
     console.log("\n=== 测试完成 ===");

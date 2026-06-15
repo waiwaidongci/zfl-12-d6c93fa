@@ -251,7 +251,7 @@ export function createDataIoRouter(helpers) {
       const farmId = getFarmIdFromQuery(req.url);
       let list = drafts;
       if (farmId) {
-        list = list.filter((d) => !d.farmId === farmId);
+        list = list.filter((d) => d.farmId === farmId);
       }
       const response = list.map(buildDraftResponse);
       return sendJson(res, 200, response);
@@ -453,8 +453,6 @@ export function createDataIoRouter(helpers) {
           meta: { source: "csv_import_draft_confirm" },
         });
 
-        db.warnings = db.warnings || [];
-        db.warnings.push(...allWarnings);
         drafts.splice(draftIdx, 1);
         await saveDb(db);
       }
@@ -531,8 +529,6 @@ export function createDataIoRouter(helpers) {
           farmId: imported[0]?.farmId || "",
           meta: { source: "csv_import", count: imported.length },
         });
-        db.warnings = db.warnings || [];
-        db.warnings.push(...allWarnings);
         await saveDb(db);
       }
 
