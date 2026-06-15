@@ -4507,7 +4507,9 @@ function renderDataIoDraftDetail(draft) {
   html += "</tbody></table></div></div>";
 
   html += '<div class="dataio-confirm-area">';
-  html += `<button type="button" id="dataioDraftConfirmBtn" class="dataio-confirm-btn" ${draft.validCount === 0 ? "disabled style='opacity:0.5;cursor:not-allowed;'" : ""}>✅ 确认导入 ${draft.validCount} 条有效记录</button>`;
+  const confirmDisabled = draft.validCount === 0 || draft.errorCount > 0;
+  const confirmTitle = draft.errorCount > 0 ? "请先修正全部错误行" : "";
+  html += `<button type="button" id="dataioDraftConfirmBtn" class="dataio-confirm-btn" ${confirmDisabled ? "disabled style='opacity:0.5;cursor:not-allowed;'" : ""} title="${confirmTitle}">✅ 确认导入 ${draft.validCount} 条有效记录</button>`;
   html += `<button type="button" id="dataioDraftAbandonBtn" class="dataio-cancel-btn" style="background:#a84e35;">🗑 放弃草稿并删除</button>`;
   html += "</div>";
 
@@ -4554,6 +4556,10 @@ function renderDataIoDraftDetail(draft) {
     confirmBtn.onclick = async () => {
       if (draft.validCount === 0) {
         alert("草稿中无有效记录可导入，请先修正错误行。");
+        return;
+      }
+      if (draft.errorCount > 0) {
+        alert("草稿中仍有错误行，请先修正全部错误行后再确认导入。");
         return;
       }
       if (!confirm(`确定要导入 ${draft.validCount} 条有效记录吗？导入后草稿将被删除，数据将写入正式记录。`)) return;

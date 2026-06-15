@@ -438,7 +438,36 @@ async function test() {
     assert(abandonLogs.length > 0, "存在 import_draft_abandon 操作日志");
     passed++;
 
-    console.log("\n14. 测试无有效行的草稿确认（应拒绝）");
+    console.log("\n14. 测试含错误行的草稿确认（应拒绝并保留草稿）");
+    const mixedErrorCsv =
+      "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal\n" +
+      `${existingBatchId},2026-09-20,P-03,28.0,22,6.2,20,0.5,无\n` +
+      `NONEXISTENT,2026-09-21,P-03,28.0,22,6.2,20,0.5,无`;
+    const { res: createMixedRes, data: createMixedData } = await api("/api/import/records/draft/create", {
+      method: "POST",
+      body: JSON.stringify({ csv: mixedErrorCsv, farmId: "FARM-DEFAULT" }),
+    });
+    assertEqual(createMixedRes.status, 201, "创建含错误行草稿成功");
+    assertEqual(createMixedData.validCount, 1, "含错误行草稿有 1 条有效行");
+    assertEqual(createMixedData.errorCount, 1, "含错误行草稿有 1 条错误行");
+
+    const mixedDraftId = createMixedData.id;
+    const dbBeforeMixedConfirm = await loadDb();
+    const recordsBeforeMixedConfirm = dbBeforeMixedConfirm.records.length;
+    const { res: confirmMixedRes, data: confirmMixedData } = await api(
+      `/api/import/records/draft/${encodeURIComponent(mixedDraftId)}/confirm`,
+      { method: "POST", body: JSON.stringify({ operator: "测试" }) }
+    );
+    assert(confirmMixedRes.status >= 400, "含错误行草稿确认返回错误");
+    assertEqual(confirmMixedData.errorCount, 1, "返回剩余错误行数量");
+
+    const dbAfterMixedConfirm = await loadDb();
+    assertEqual(dbAfterMixedConfirm.records.length, recordsBeforeMixedConfirm, "含错误行草稿确认后正式记录数量不变");
+    const mixedDraftsAfterConfirm = dbAfterMixedConfirm.importDrafts.filter((d) => d.id === mixedDraftId);
+    assertEqual(mixedDraftsAfterConfirm.length, 1, "含错误行草稿确认失败后草稿仍保留");
+    passed++;
+
+    console.log("\n15. 测试无有效行的草稿确认（应拒绝）");
     const emptyValidCsv = parseCsv(buildCsvWithErrors());
     const allErrorRows = emptyValidCsv.rows.map((row) => ({
       ...row,
@@ -461,7 +490,7 @@ async function test() {
     }
     passed++;
 
-    console.log("\n15. 测试快速模式（非草稿）直接导入");
+    console.log("\n16. 测试快速模式（非草稿）直接导入");
     const quickUniqueDate1 = `2026-12-11`;
     const quickUniqueDate2 = `2026-12-12`;
     const { res: quickPreviewRes, data: quickPreviewData } = await api("/api/import/records/preview", {
@@ -493,7 +522,7 @@ async function test() {
     assert(dbAfterQuick.records.length >= quickBeforeCount + 2, "快速模式记录数量正确增加");
     passed++;
 
-    console.log("\n16. 测试重复日期校验（确认导入时跳过）");
+    console.log("\n17. 测试重复日期校验（确认导入时跳过）");
     const { res: dupRes, data: dupData } = await api("/api/import/records/confirm", {
       method: "POST",
       body: JSON.stringify({ records: quickRows }),
@@ -503,12 +532,12 @@ async function test() {
     assert(dupData.skippedCount >= 2, "跳过数量正确（至少 2 条）");
     passed++;
 
-    console.log("\n17. 测试 GET 不存在草稿返回 404");
+    console.log("\n18. 测试 GET 不存在草稿返回 404");
     const { res: notFoundRes } = await api("/api/import/records/draft/DRAFT-NONEXISTENT-12345");
     assertEqual(notFoundRes.status, 404, "不存在的草稿返回 404");
     passed++;
 
-    console.log("\n18. 测试删除不存在草稿返回 404");
+    console.log("\n19. 测试删除不存在草稿返回 404");
     const { res: deleteNotFoundRes } = await api("/api/import/records/draft/DRAFT-NONEXISTENT-12345", {
       method: "DELETE",
       body: JSON.stringify({}),
@@ -516,7 +545,7 @@ async function test() {
     assertEqual(deleteNotFoundRes.status, 404, "删除不存在的草稿返回 404");
     passed++;
 
-    console.log("\n19. 验证 RECORD_SCHEMA 配置完整");
+    console.log("\n20. 验证 RECORD_SCHEMA 配置完整");
     assert(Array.isArray(RECORD_SCHEMA.required), "required 字段是数组");
     assert(Array.isArray(RECORD_SCHEMA.optional), "optional 字段是数组");
     assert(Array.isArray(RECORD_SCHEMA.numeric), "numeric 字段是数组");
@@ -526,14 +555,14 @@ async function test() {
     });
     passed++;
 
-    console.log("\n20. 验证 RECORD_SCHEMA 字段完整性（与实际导入列一致）");
+    console.log("\n21. 验证 RECORD_SCHEMA 字段完整性（与实际导入列一致）");
     const expectedRequired = ["batchId", "date", "temperature", "salinity", "oxygen", "feed", "mortality"];
     expectedRequired.forEach((f) => {
       assert(RECORD_SCHEMA.required.includes(f), `required 包含 ${f}`);
     });
     passed++;
 
-    console.log("\n21. 验证预警不重复落库（草稿确认 + 快速模式）");
+    console.log("\n22. 验证预警不重复落库（草稿确认 + 快速模式）");
     const warningCsv =
       "batchId,date,poolId,temperature,salinity,oxygen,feed,mortality,abnormal\n" +
       `${existingBatchId},2026-09-01,P-01,36,24,2,15,5,浮头\n` +

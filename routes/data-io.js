@@ -370,6 +370,14 @@ export function createDataIoRouter(helpers) {
       const input = await body(req);
       const operator = input?.operator || "";
 
+      const errorRows = draft.rows.filter((r) => !r.isValid);
+      if (errorRows.length > 0) {
+        return sendJson(res, 400, {
+          error: "草稿中仍有错误行，请修正后再确认导入",
+          errorCount: errorRows.length,
+        });
+      }
+
       const validRows = draft.rows.filter((r) => r.isValid);
       if (validRows.length === 0) {
         return sendJson(res, 400, { error: "草稿中无有效记录可导入" });
