@@ -21,18 +21,24 @@ function getCurrentFarmCostCategories() {
   return getFarmCostCategories(farmId);
 }
 
-function getAllCostCategories(farmId) {
+function getAllCostCategories(farmId, extraCategories = []) {
   const farmCats = getFarmCostCategories(farmId);
-  const merged = [...new Set([...LEGACY_COST_CATEGORIES, ...farmCats])];
+  const merged = [...new Set([...LEGACY_COST_CATEGORIES, ...farmCats, ...extraCategories])];
   return merged;
 }
 
 function getCostCategoriesForBatch(batchId) {
   const batch = (db.batches || []).find((b) => b.id === batchId);
   const farmId = batch?.farmId || getEffectiveFarmId();
+  const usedCategories = [...new Set(
+    (db.costItems || [])
+      .filter((c) => c.batchId === batchId)
+      .map((c) => c.category)
+      .filter(Boolean)
+  )];
   return {
     categories: getFarmCostCategories(farmId),
-    allCategories: getAllCostCategories(farmId),
+    allCategories: getAllCostCategories(farmId, usedCategories),
   };
 }
 
@@ -1227,8 +1233,9 @@ function renderCostStats() {
     filtered = costItems.filter((c) => c.batchId === batchFilter);
   }
 
-  const categories = getCurrentFarmCostCategories();
-  const allCategories = getAllCostCategories(getEffectiveFarmId());
+  const usedCategories = [...new Set(filtered.map((c) => c.category).filter(Boolean))];
+  const categories = [...new Set([...getCurrentFarmCostCategories(), ...usedCategories])];
+  const allCategories = getAllCostCategories(getEffectiveFarmId(), usedCategories);
 
   const byCategory = {};
   allCategories.forEach((cat) => {
@@ -1243,7 +1250,7 @@ function renderCostStats() {
     ["总成本", total.toFixed(2) + " 元"],
   ];
   categories.forEach((cat) => {
-    stats.push([cat, byCategory[cat].toFixed(2) + " 元"]);
+    stats.push([cat, (byCategory[cat] || 0).toFixed(2) + " 元"]);
   });
 
   document.getElementById("costStats").innerHTML = stats

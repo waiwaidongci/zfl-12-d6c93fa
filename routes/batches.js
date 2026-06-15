@@ -30,7 +30,9 @@ function avg(items, key) {
 }
 
 function calcCostSummary(costItems, db, farmId) {
-  const categories = getAllCostCategoriesForFarm(db, farmId);
+  const farmCategories = getAllCostCategoriesForFarm(db, farmId);
+  const usedCategories = [...new Set(costItems.map((c) => c.category).filter(Boolean))];
+  const categories = [...new Set([...farmCategories, ...usedCategories])];
   const byCategory = {};
   categories.forEach((cat) => {
     byCategory[cat] = costItems
