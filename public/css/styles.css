@@ -2407,3 +2407,84 @@ button.tiny:disabled {
   justify-content: flex-end;
   gap: 10px;
 }
+
+.thresholds-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.thresholds-row > label {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+  flex: 1;
+}
+
+.thresholds-row > label > input,
+.thresholds-row > label > select {
+  margin: 0;
+}
+
+.threshold-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.threshold-rule-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fafcfb;
+}
+
+.threshold-rule-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.threshold-rule-header .spacer {
+  flex: 1;
+}
+
+.threshold-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.threshold-config-actions .spacer {
+  flex: 1;
+}
+
+.tiny-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  background: #d9e8e6;
+  color: var(--ink);
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.tiny-btn.danger {
+  background: #f3d9d0;
+  color: var(--warn);
+}
+
+.modal-wide {
+  max-width: 720px !important;
+  width: 90% !important;
+}

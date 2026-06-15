@@ -2,6 +2,33 @@ import { writeLog } from "../utils/audit-log.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
+const HATCHERY_STAGES = [
+  { key: "egg", label: "卵/孵化期", minDays: 0, maxDays: 2 },
+  { key: "nauplius", label: "无节幼体", minDays: 3, maxDays: 5 },
+  { key: "zoea", label: "蚤状幼体", minDays: 6, maxDays: 10 },
+  { key: "mysis", label: "糠虾幼体", minDays: 11, maxDays: 15 },
+  { key: "postlarva", label: "仔虾/仔鱼期", minDays: 16, maxDays: 30 },
+  { key: "juvenile", label: "幼体期", minDays: 31, maxDays: null },
+];
+
+export function getHatcheryStage(hatchDate, recordDate) {
+  if (!hatchDate || !recordDate) return null;
+  const hatch = new Date(hatchDate);
+  const record = new Date(recordDate);
+  if (isNaN(hatch.getTime()) || isNaN(record.getTime())) return null;
+  const days = Math.floor((record - hatch) / (1000 * 60 * 60 * 24));
+  for (const stage of HATCHERY_STAGES) {
+    if (days >= stage.minDays && (stage.maxDays === null || days <= stage.maxDays)) {
+      return stage.key;
+    }
+  }
+  return null;
+}
+
+export function getAllStages() {
+  return HATCHERY_STAGES;
+}
+
 function getDefaultFarmId(db) {
   if (db.farms && db.farms.length > 0) {
     const def = db.farms.find((f) => f.isDefault);
@@ -18,6 +45,108 @@ function getFarmIdForBatch(db, batchId) {
 function getFarmIdFromQuery(req) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   return url.searchParams.get("farmId");
+}
+
+function getBatchInfo(db, batchId) {
+  const batch = db.batches.find((b) => b.id === batchId);
+  if (!batch) return { farmId: null, species: "", hatchDate: "" };
+  return {
+    farmId: batch.farmId || getDefaultFarmId(db),
+    species: batch.species || "",
+    hatchDate: batch.hatchDate || "",
+  };
+}
+
+function getDefaultThresholds() {
+  return {
+    temperature: { yellowMin: 20, yellowMax: 32, redMin: 18, redMax: 35 },
+    salinity: { yellowMin: 15, yellowMax: 30, redMin: 10, redMax: 35 },
+    oxygen: { yellowMax: 4.5, redMax: 3 },
+    mortality: { yellowMin: 2, redMin: 5 },
+    abnormalKeywords: [
+      "死苗", "变色", "发病", "浮头", "白斑", "红体",
+      "溃烂", "停食", "狂游", "沉底",
+    ],
+  };
+}
+
+function migrateOldThresholds(db) {
+  if (!db.warningThresholdRules) db.warningThresholdRules = [];
+  if (db.warningThresholdRules.length === 0 && db.warningThresholds) {
+    db.warningThresholdRules.push({
+      id: "RULE-DEFAULT",
+      name: "默认规则",
+      farmId: "",
+      species: "",
+      stage: "",
+      isDefault: true,
+      thresholds: JSON.parse(JSON.stringify(db.warningThresholds)),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    delete db.warningThresholds;
+    return true;
+  }
+  if (db.warningThresholdRules.length === 0) {
+    db.warningThresholdRules.push({
+      id: "RULE-DEFAULT",
+      name: "默认规则",
+      farmId: "",
+      species: "",
+      stage: "",
+      isDefault: true,
+      thresholds: getDefaultThresholds(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+  return false;
+}
+
+function ruleMatchScore(rule, farmId, species, stage) {
+  let score = 0;
+  if (rule.farmId && farmId && rule.farmId === farmId) score += 100;
+  if (rule.species && species && rule.species === species) score += 10;
+  if (rule.stage && stage && rule.stage === stage) score += 1;
+  return score;
+}
+
+export function getThresholdsForRecord(db, record) {
+  migrateOldThresholds(db);
+  const rules = db.warningThresholdRules || [];
+  const { farmId, species, hatchDate } = getBatchInfo(db, record.batchId);
+  const actualFarmId = record.farmId || farmId;
+  const stage = getHatcheryStage(hatchDate, record.date);
+
+  let bestRule = null;
+  let bestScore = -1;
+  let defaultRule = null;
+
+  for (const rule of rules) {
+    if (rule.isDefault) {
+      defaultRule = rule;
+      continue;
+    }
+    if (rule.farmId && actualFarmId && rule.farmId !== actualFarmId) continue;
+    if (rule.species && species && rule.species !== species) continue;
+    if (rule.stage && stage && rule.stage !== stage) continue;
+    const score = ruleMatchScore(rule, actualFarmId, species, stage);
+    if (score > bestScore) {
+      bestScore = score;
+      bestRule = rule;
+    }
+  }
+
+  const matchedRule = bestRule || defaultRule;
+  if (!matchedRule) {
+    return { thresholds: getDefaultThresholds(), matchedRuleId: null, matchedRuleName: "系统内置默认" };
+  }
+  return {
+    thresholds: matchedRule.thresholds,
+    matchedRuleId: matchedRule.id,
+    matchedRuleName: matchedRule.name,
+  };
 }
 
 export function createWarningsRouter(helpers) {
@@ -50,29 +179,185 @@ export function createWarningsRouter(helpers) {
 
     if (method === "GET" && pathname === "/api/warnings/thresholds") {
       const db = await loadDb();
-      return sendJson(res, 200, db.warningThresholds || {});
+      migrateOldThresholds(db);
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const compat = url.searchParams.get("format") === "legacy";
+      if (compat) {
+        const defaultRule = (db.warningThresholdRules || []).find((r) => r.isDefault);
+        return sendJson(res, 200, defaultRule?.thresholds || getDefaultThresholds());
+      }
+      return sendJson(res, 200, {
+        rules: db.warningThresholdRules || [],
+        stages: getAllStages(),
+      });
+    }
+
+    if (method === "GET" && pathname === "/api/warnings/thresholds/stages") {
+      return sendJson(res, 200, getAllStages());
+    }
+
+    if (method === "POST" && pathname === "/api/warnings/thresholds") {
+      const input = await body(req);
+      const db = await loadDb();
+      migrateOldThresholds(db);
+      if (!db.warningThresholdRules) db.warningThresholdRules = [];
+
+      if (input.isDefault) {
+        db.warningThresholdRules.forEach((r) => (r.isDefault = false));
+      }
+
+      const newRule = {
+        id: input.id || "RULE-" + Date.now(),
+        name: input.name || "未命名规则",
+        farmId: input.farmId || "",
+        species: input.species || "",
+        stage: input.stage || "",
+        isDefault: !!input.isDefault,
+        thresholds: input.thresholds || getDefaultThresholds(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      db.warningThresholdRules.push(newRule);
+
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "threshold_rule_create",
+        targetType: "thresholdRule",
+        targetId: newRule.id,
+        before: null,
+        after: newRule,
+        farmId: newRule.farmId || "",
+      });
+      await saveDb(db);
+      return sendJson(res, 201, newRule);
+    }
+
+    const ruleMatch = pathname.match(/^\/api\/warnings\/thresholds\/([^/]+)$/);
+    if (ruleMatch) {
+      const ruleId = ruleMatch[1];
+      const db = await loadDb();
+      migrateOldThresholds(db);
+      const ruleIndex = (db.warningThresholdRules || []).findIndex((r) => r.id === ruleId);
+
+      if (method === "GET") {
+        if (ruleIndex === -1) return sendJson(res, 404, { error: "规则不存在" });
+        return sendJson(res, 200, db.warningThresholdRules[ruleIndex]);
+      }
+
+      if (method === "PUT") {
+        if (ruleIndex === -1) return sendJson(res, 404, { error: "规则不存在" });
+        const input = await body(req);
+        const oldRule = JSON.parse(JSON.stringify(db.warningThresholdRules[ruleIndex]));
+
+        if (input.isDefault) {
+          db.warningThresholdRules.forEach((r) => (r.isDefault = false));
+        }
+
+        db.warningThresholdRules[ruleIndex] = {
+          ...db.warningThresholdRules[ruleIndex],
+          name: input.name !== undefined ? input.name : db.warningThresholdRules[ruleIndex].name,
+          farmId: input.farmId !== undefined ? input.farmId : db.warningThresholdRules[ruleIndex].farmId,
+          species: input.species !== undefined ? input.species : db.warningThresholdRules[ruleIndex].species,
+          stage: input.stage !== undefined ? input.stage : db.warningThresholdRules[ruleIndex].stage,
+          isDefault: input.isDefault !== undefined ? !!input.isDefault : db.warningThresholdRules[ruleIndex].isDefault,
+          thresholds: input.thresholds || db.warningThresholdRules[ruleIndex].thresholds,
+          updatedAt: new Date().toISOString(),
+        };
+
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "threshold_rule_update",
+          targetType: "thresholdRule",
+          targetId: ruleId,
+          before: oldRule,
+          after: db.warningThresholdRules[ruleIndex],
+          farmId: db.warningThresholdRules[ruleIndex].farmId || "",
+        });
+        await saveDb(db);
+        return sendJson(res, 200, db.warningThresholdRules[ruleIndex]);
+      }
+
+      if (method === "DELETE") {
+        if (ruleIndex === -1) return sendJson(res, 404, { error: "规则不存在" });
+        const existing = db.warningThresholdRules[ruleIndex];
+        if (existing.isDefault) {
+          return sendJson(res, 400, { error: "不能删除默认规则，请先设置其他规则为默认" });
+        }
+        db.warningThresholdRules.splice(ruleIndex, 1);
+        writeLog(db, {
+          operator: "",
+          action: "threshold_rule_delete",
+          targetType: "thresholdRule",
+          targetId: existing.id,
+          before: existing,
+          after: null,
+          farmId: existing.farmId || "",
+        });
+        await saveDb(db);
+        return sendJson(res, 200, { ok: true });
+      }
+    }
+
+    if (method === "POST" && pathname === "/api/warnings/rescan") {
+      const input = await body(req);
+      const db = await loadDb();
+      migrateOldThresholds(db);
+      const regenerated = regenerateAllWarnings(db);
+      writeLog(db, {
+        operator: input.operator || "",
+        action: "warning_rescan",
+        targetType: "warning",
+        targetId: "",
+        before: null,
+        after: { regeneratedCount: regenerated },
+        farmId: "",
+      });
+      await saveDb(db);
+      return sendJson(res, 200, { regeneratedCount: regenerated });
     }
 
     if (method === "PUT" && pathname === "/api/warnings/thresholds") {
       const input = await body(req);
       const db = await loadDb();
-      const oldThresholds = db.warningThresholds ? JSON.parse(JSON.stringify(db.warningThresholds)) : null;
-      db.warningThresholds = {
-        ...db.warningThresholds,
+      migrateOldThresholds(db);
+      if (!db.warningThresholdRules) db.warningThresholdRules = [];
+
+      let defaultRule = db.warningThresholdRules.find((r) => r.isDefault);
+      const oldThresholds = defaultRule ? JSON.parse(JSON.stringify(defaultRule.thresholds)) : null;
+
+      if (!defaultRule) {
+        defaultRule = {
+          id: "RULE-DEFAULT",
+          name: "默认规则",
+          farmId: "",
+          species: "",
+          stage: "",
+          isDefault: true,
+          thresholds: getDefaultThresholds(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        db.warningThresholdRules.push(defaultRule);
+      }
+
+      defaultRule.thresholds = {
+        ...defaultRule.thresholds,
         ...input,
       };
+      defaultRule.updatedAt = new Date().toISOString();
+
       const regenerated = regenerateAllWarnings(db);
       writeLog(db, {
         operator: input.operator || "",
         action: "threshold_update",
         targetType: "threshold",
-        targetId: "warningThresholds",
+        targetId: defaultRule.id,
         before: oldThresholds,
-        after: db.warningThresholds,
+        after: defaultRule.thresholds,
         farmId: "",
       });
       await saveDb(db);
-      return sendJson(res, 200, { thresholds: db.warningThresholds, regeneratedCount: regenerated });
+      return sendJson(res, 200, { thresholds: defaultRule.thresholds, regeneratedCount: regenerated });
     }
 
     const detailMatch = pathname.match(/^\/api\/warnings\/([^/]+)$/);
@@ -244,7 +529,7 @@ function checkThresholds(record, thresholds) {
 }
 
 export function generateWarningsFromRecord(record, db, regenerateAllStatuses = false) {
-  const thresholds = db.warningThresholds || {};
+  const { thresholds, matchedRuleId, matchedRuleName } = getThresholdsForRecord(db, record);
   const { reasons, level } = checkThresholds(record, thresholds);
   if (!db.warnings) db.warnings = [];
 
@@ -285,6 +570,8 @@ export function generateWarningsFromRecord(record, db, regenerateAllStatuses = f
       existing.date = record.date;
       existing.batchId = record.batchId;
       existing.poolId = record.poolId || existing.poolId || "";
+      existing.ruleId = matchedRuleId;
+      existing.ruleName = matchedRuleName;
     });
     return existings;
   }
@@ -307,6 +594,8 @@ export function generateWarningsFromRecord(record, db, regenerateAllStatuses = f
     handleHistory: [],
     createdAt: new Date().toISOString(),
     farmId: record.farmId || getFarmIdForBatch(db, record.batchId),
+    ruleId: matchedRuleId,
+    ruleName: matchedRuleName,
   };
 
   db.warnings.push(warning);
@@ -321,6 +610,7 @@ export function removeWarningsForRecord(recordId, db) {
 }
 
 export function regenerateAllWarnings(db) {
+  migrateOldThresholds(db);
   if (!db.records || !db.records.length) return 0;
   if (!db.warnings) db.warnings = [];
   let count = 0;

@@ -129,6 +129,19 @@
       "mortality": 0.8,
       "abnormal": "无",
       "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "REC-1781496908071",
+      "batchId": "B-LAOSHAN-01",
+      "date": "2026-06-15",
+      "poolId": "P-06",
+      "temperature": 13,
+      "salinity": 30,
+      "oxygen": 6,
+      "feed": 10,
+      "mortality": 0.5,
+      "abnormal": "无",
+      "farmId": "FARM-001"
     }
   ],
   "transfers": [
@@ -356,41 +369,31 @@
   ],
   "orders": [],
   "shipments": [],
-  "warnings": [],
-  "warningThresholds": {
-    "temperature": {
-      "yellowMin": 20,
-      "yellowMax": 32,
-      "redMin": 18,
-      "redMax": 35
-    },
-    "salinity": {
-      "yellowMin": 15,
-      "yellowMax": 30,
-      "redMin": 10,
-      "redMax": 35
-    },
-    "oxygen": {
-      "yellowMax": 4.5,
-      "redMax": 3
-    },
-    "mortality": {
-      "yellowMin": 2,
-      "redMin": 5
-    },
-    "abnormalKeywords": [
-      "死苗",
-      "变色",
-      "发病",
-      "浮头",
-      "白斑",
-      "红体",
-      "溃烂",
-      "停食",
-      "狂游",
-      "沉底"
-    ]
-  },
+  "warnings": [
+    {
+      "id": "WARN-1781496908073-nam7",
+      "batchId": "B-LAOSHAN-01",
+      "recordId": "REC-1781496908071",
+      "poolId": "P-06",
+      "date": "2026-06-15",
+      "level": "yellow",
+      "reasons": [
+        "水温13℃（黄色阈值）"
+      ],
+      "status": "pending",
+      "handler": "",
+      "handleNote": "",
+      "handleDate": "",
+      "processingAt": "",
+      "resolvedAt": "",
+      "autoResolved": false,
+      "handleHistory": [],
+      "createdAt": "2026-06-15T04:15:08.073Z",
+      "farmId": "FARM-001",
+      "ruleId": "RULE-1781496908060",
+      "ruleName": "崂山场区大菱鲆专用"
+    }
+  ],
   "inventories": [],
   "farms": [
     {
@@ -780,6 +783,227 @@
       "meta": null,
       "rolledBack": false,
       "createdAt": "2026-06-15T02:37:12.127Z"
+    },
+    {
+      "id": "LOG-1781496908060-49zl",
+      "operator": "系统",
+      "action": "threshold_rule_create",
+      "targetType": "thresholdRule",
+      "targetId": "RULE-1781496908060",
+      "before": null,
+      "after": {
+        "id": "RULE-1781496908060",
+        "name": "崂山场区大菱鲆专用",
+        "farmId": "FARM-001",
+        "species": "大菱鲆",
+        "stage": "",
+        "isDefault": false,
+        "thresholds": {
+          "temperature": {
+            "yellowMin": 14,
+            "yellowMax": 20,
+            "redMin": 12,
+            "redMax": 22
+          },
+          "salinity": {
+            "yellowMin": 25,
+            "yellowMax": 35,
+            "redMin": 20,
+            "redMax": 40
+          },
+          "oxygen": {
+            "yellowMax": 5,
+            "redMax": 4
+          },
+          "mortality": {
+            "yellowMin": 1,
+            "redMin": 3
+          },
+          "abnormalKeywords": [
+            "死苗",
+            "发病"
+          ]
+        },
+        "createdAt": "2026-06-15T04:15:08.060Z",
+        "updatedAt": "2026-06-15T04:15:08.060Z"
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T04:15:08.060Z"
+    },
+    {
+      "id": "LOG-1781496908073-rko6",
+      "operator": "系统",
+      "action": "record_create",
+      "targetType": "record",
+      "targetId": "REC-1781496908071",
+      "before": null,
+      "after": {
+        "id": "REC-1781496908071",
+        "batchId": "B-LAOSHAN-01",
+        "date": "2026-06-15",
+        "poolId": "P-06",
+        "temperature": 13,
+        "salinity": 30,
+        "oxygen": 6,
+        "feed": 10,
+        "mortality": 0.5,
+        "abnormal": "无",
+        "farmId": "FARM-001"
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T04:15:08.073Z"
+    },
+    {
+      "id": "LOG-1781496908078-5f9w",
+      "operator": "系统",
+      "action": "warning_rescan",
+      "targetType": "warning",
+      "targetId": "",
+      "before": null,
+      "after": {
+        "regeneratedCount": 1
+      },
+      "farmId": "",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T04:15:08.078Z"
+    },
+    {
+      "id": "LOG-1781496908084-1qpi",
+      "operator": "系统",
+      "action": "threshold_rule_update",
+      "targetType": "thresholdRule",
+      "targetId": "RULE-1781496908060",
+      "before": {
+        "id": "RULE-1781496908060",
+        "name": "崂山场区大菱鲆专用",
+        "farmId": "FARM-001",
+        "species": "大菱鲆",
+        "stage": "",
+        "isDefault": false,
+        "thresholds": {
+          "temperature": {
+            "yellowMin": 14,
+            "yellowMax": 20,
+            "redMin": 12,
+            "redMax": 22
+          },
+          "salinity": {
+            "yellowMin": 25,
+            "yellowMax": 35,
+            "redMin": 20,
+            "redMax": 40
+          },
+          "oxygen": {
+            "yellowMax": 5,
+            "redMax": 4
+          },
+          "mortality": {
+            "yellowMin": 1,
+            "redMin": 3
+          },
+          "abnormalKeywords": [
+            "死苗",
+            "发病"
+          ]
+        },
+        "createdAt": "2026-06-15T04:15:08.060Z",
+        "updatedAt": "2026-06-15T04:15:08.060Z"
+      },
+      "after": {
+        "id": "RULE-1781496908060",
+        "name": "崂山场区大菱鲆专用（已修改）",
+        "farmId": "FARM-001",
+        "species": "大菱鲆",
+        "stage": "",
+        "isDefault": false,
+        "thresholds": {
+          "temperature": {
+            "yellowMin": 15,
+            "yellowMax": 19,
+            "redMin": 13,
+            "redMax": 21
+          },
+          "salinity": {
+            "yellowMin": 26,
+            "yellowMax": 34,
+            "redMin": 22,
+            "redMax": 38
+          },
+          "oxygen": {
+            "yellowMax": 5.5,
+            "redMax": 4.5
+          },
+          "mortality": {
+            "yellowMin": 1.5,
+            "redMin": 3.5
+          },
+          "abnormalKeywords": [
+            "死苗",
+            "发病",
+            "浮头"
+          ]
+        },
+        "createdAt": "2026-06-15T04:15:08.060Z",
+        "updatedAt": "2026-06-15T04:15:08.084Z"
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T04:15:08.084Z"
+    },
+    {
+      "id": "LOG-1781496908095-ry8j",
+      "operator": "系统",
+      "action": "threshold_rule_delete",
+      "targetType": "thresholdRule",
+      "targetId": "RULE-1781496908060",
+      "before": {
+        "id": "RULE-1781496908060",
+        "name": "崂山场区大菱鲆专用（已修改）",
+        "farmId": "FARM-001",
+        "species": "大菱鲆",
+        "stage": "",
+        "isDefault": false,
+        "thresholds": {
+          "temperature": {
+            "yellowMin": 15,
+            "yellowMax": 19,
+            "redMin": 13,
+            "redMax": 21
+          },
+          "salinity": {
+            "yellowMin": 26,
+            "yellowMax": 34,
+            "redMin": 22,
+            "redMax": 38
+          },
+          "oxygen": {
+            "yellowMax": 5.5,
+            "redMax": 4.5
+          },
+          "mortality": {
+            "yellowMin": 1.5,
+            "redMin": 3.5
+          },
+          "abnormalKeywords": [
+            "死苗",
+            "发病",
+            "浮头"
+          ]
+        },
+        "createdAt": "2026-06-15T04:15:08.060Z",
+        "updatedAt": "2026-06-15T04:15:08.084Z"
+      },
+      "after": null,
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T04:15:08.095Z"
     }
   ],
   "lineages": [
@@ -901,6 +1125,52 @@
       "farmId": "FARM-DEFAULT",
       "createdAt": "2026-06-14T15:47:40.376Z",
       "migratedFromTransferId": "TR-1781452032398"
+    }
+  ],
+  "warningThresholdRules": [
+    {
+      "id": "RULE-DEFAULT",
+      "name": "默认规则",
+      "farmId": "",
+      "species": "",
+      "stage": "",
+      "isDefault": true,
+      "thresholds": {
+        "temperature": {
+          "yellowMin": 20,
+          "yellowMax": 32,
+          "redMin": 18,
+          "redMax": 35
+        },
+        "salinity": {
+          "yellowMin": 15,
+          "yellowMax": 30,
+          "redMin": 10,
+          "redMax": 35
+        },
+        "oxygen": {
+          "yellowMax": 4.5,
+          "redMax": 3
+        },
+        "mortality": {
+          "yellowMin": 2,
+          "redMin": 5
+        },
+        "abnormalKeywords": [
+          "死苗",
+          "变色",
+          "发病",
+          "浮头",
+          "白斑",
+          "红体",
+          "溃烂",
+          "停食",
+          "狂游",
+          "沉底"
+        ]
+      },
+      "createdAt": "2026-06-15T04:15:08.060Z",
+      "updatedAt": "2026-06-15T04:15:08.060Z"
     }
   ]
 }

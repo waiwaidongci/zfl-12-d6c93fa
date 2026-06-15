@@ -1521,7 +1521,7 @@ function renderWarningList() {
         <button type="button" class="tiny-btn" data-action="detail" title="查看详情">ⓘ 详情${hasHistory ? `（${w.handleHistory.length}）` : ""}</button>
       </div>
       <div class="warning-id">${w.id} · ${w.batchId}${w.poolId ? " · " + w.poolId : ""}</div>
-      <div class="warning-date">${w.date}</div>
+      <div class="warning-date">${w.date}${w.ruleName ? ' · 匹配规则：' + w.ruleName : ''}</div>
       <div class="warning-reasons">${reasonsHtml}</div>
       ${w.handler ? `<div class="warning-handle-info"><span class="label">处理人</span><span>${w.handler}</span></div>` : ""}
       ${w.handleNote ? `<div class="warning-handle-info"><span class="label">处理备注</span><span>${w.handleNote}</span></div>` : ""}
@@ -1754,88 +1754,299 @@ function openWarningHandleModal(warningId, targetStatus) {
   };
 }
 
-function openThresholdConfigModal() {
-  const thresholds = db.warningThresholds || {};
-  const t = thresholds.temperature || {};
-  const s = thresholds.salinity || {};
-  const o = thresholds.oxygen || {};
-  const m = thresholds.mortality || {};
-  const keywords = (thresholds.abnormalKeywords || []).join("、");
+const DEFAULT_THRESHOLDS_TEMPLATE = {
+  temperature: { yellowMin: 20, yellowMax: 32, redMin: 18, redMax: 35 },
+  salinity: { yellowMin: 15, yellowMax: 30, redMin: 10, redMax: 35 },
+  oxygen: { yellowMax: 4.5, redMax: 3 },
+  mortality: { yellowMin: 2, redMin: 5 },
+  abnormalKeywords: ["死苗", "变色", "发病", "浮头", "白斑", "红体", "溃烂", "停食", "狂游", "沉底"],
+};
+
+const HATCHERY_STAGES_CLIENT = [
+  { key: "", label: "全部阶段" },
+  { key: "egg", label: "卵/孵化期（0-2天）" },
+  { key: "nauplius", label: "无节幼体（3-5天）" },
+  { key: "zoea", label: "蚤状幼体（6-10天）" },
+  { key: "mysis", label: "糠虾幼体（11-15天）" },
+  { key: "postlarva", label: "仔虾/仔鱼期（16-30天）" },
+  { key: "juvenile", label: "幼体期（31天以上）" },
+];
+
+function getAllSpecies() {
+  const species = new Set();
+  (db.batches || []).forEach((b) => { if (b.species) species.add(b.species); });
+  return Array.from(species);
+}
+
+function describeRule(rule) {
+  const parts = [];
+  if (rule.isDefault) return "默认规则（所有未匹配场景回退到此规则）";
+  if (rule.farmId) {
+    const farm = (db.farms || []).find((f) => f.id === rule.farmId);
+    parts.push("场区：" + (farm?.name || rule.farmId));
+  } else {
+    parts.push("场区：全部");
+  }
+  if (rule.species) parts.push("品种：" + rule.species);
+  else parts.push("品种：全部");
+  if (rule.stage) {
+    const s = HATCHERY_STAGES_CLIENT.find((x) => x.key === rule.stage);
+    parts.push("阶段：" + (s?.label || rule.stage));
+  } else {
+    parts.push("阶段：全部");
+  }
+  return parts.join(" · ");
+}
+
+function buildThresholdsForm(prefix, thresholds) {
+  const t = thresholds?.temperature || {};
+  const s = thresholds?.salinity || {};
+  const o = thresholds?.oxygen || {};
+  const m = thresholds?.mortality || {};
+  const keywords = (thresholds?.abnormalKeywords || []).join("、");
+  const n = (k) => `${prefix}.${k}`;
+  return `
+    <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">水温阈值（℃）</h3>
+    <div class="thresholds-row">
+      <label>黄下限</label><input name="${n("temperature.yellowMin")}" type="number" step="0.1" value="${t.yellowMin ?? 20}">
+      <label>黄上限</label><input name="${n("temperature.yellowMax")}" type="number" step="0.1" value="${t.yellowMax ?? 32}">
+      <label>红下限</label><input name="${n("temperature.redMin")}" type="number" step="0.1" value="${t.redMin ?? 18}">
+      <label>红上限</label><input name="${n("temperature.redMax")}" type="number" step="0.1" value="${t.redMax ?? 35}">
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">盐度阈值</h3>
+    <div class="thresholds-row">
+      <label>黄下限</label><input name="${n("salinity.yellowMin")}" type="number" step="0.1" value="${s.yellowMin ?? 15}">
+      <label>黄上限</label><input name="${n("salinity.yellowMax")}" type="number" step="0.1" value="${s.yellowMax ?? 30}">
+      <label>红下限</label><input name="${n("salinity.redMin")}" type="number" step="0.1" value="${s.redMin ?? 10}">
+      <label>红上限</label><input name="${n("salinity.redMax")}" type="number" step="0.1" value="${s.redMax ?? 35}">
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">溶氧阈值（mg/L，低于此值触发）</h3>
+    <div class="thresholds-row">
+      <label>黄色</label><input name="${n("oxygen.yellowMax")}" type="number" step="0.1" value="${o.yellowMax ?? 4.5}">
+      <label>红色</label><input name="${n("oxygen.redMax")}" type="number" step="0.1" value="${o.redMax ?? 3}">
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">死亡率阈值（%，高于此值触发）</h3>
+    <div class="thresholds-row">
+      <label>黄色</label><input name="${n("mortality.yellowMin")}" type="number" step="0.1" value="${m.yellowMin ?? 2}">
+      <label>红色</label><input name="${n("mortality.redMin")}" type="number" step="0.1" value="${m.redMin ?? 5}">
+    </div>
+    <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">异常文本关键词</h3>
+    <label>关键词（用中文顿号「、」分隔）</label>
+    <textarea name="${n("abnormalKeywords")}">${keywords}</textarea>
+  `;
+}
+
+function parseThresholdsFromForm(formData, prefix) {
+  const parseNum = (v) => (v !== "" && v != null ? Number(v) : undefined);
+  const n = (k) => `${prefix}.${k}`;
+  return {
+    temperature: {
+      yellowMin: parseNum(formData.get(n("temperature.yellowMin"))),
+      yellowMax: parseNum(formData.get(n("temperature.yellowMax"))),
+      redMin: parseNum(formData.get(n("temperature.redMin"))),
+      redMax: parseNum(formData.get(n("temperature.redMax"))),
+    },
+    salinity: {
+      yellowMin: parseNum(formData.get(n("salinity.yellowMin"))),
+      yellowMax: parseNum(formData.get(n("salinity.yellowMax"))),
+      redMin: parseNum(formData.get(n("salinity.redMin"))),
+      redMax: parseNum(formData.get(n("salinity.redMax"))),
+    },
+    oxygen: {
+      yellowMax: parseNum(formData.get(n("oxygen.yellowMax"))),
+      redMax: parseNum(formData.get(n("oxygen.redMax"))),
+    },
+    mortality: {
+      yellowMin: parseNum(formData.get(n("mortality.yellowMin"))),
+      redMin: parseNum(formData.get(n("mortality.redMin"))),
+    },
+    abnormalKeywords: (formData.get(n("abnormalKeywords")) || "")
+      .split("、").map((s) => s.trim()).filter(Boolean),
+  };
+}
+
+function openRuleEditorModal(existingRule = null, onSaved) {
+  const isEdit = !!existingRule;
+  const rule = existingRule || {
+    id: "",
+    name: "",
+    farmId: "",
+    species: "",
+    stage: "",
+    isDefault: false,
+    thresholds: JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS_TEMPLATE)),
+  };
+  const farms = db.farms || [];
+  const speciesList = getAllSpecies();
+
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
-    <div class="modal">
-      <h2>预警阈值配置</h2>
-      <form id="thresholdForm">
-        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">水温阈值（℃）</h3>
-        <label>黄色预警下限</label><input name="temperature.yellowMin" type="number" step="0.1" value="${t.yellowMin ?? 20}">
-        <label>黄色预警上限</label><input name="temperature.yellowMax" type="number" step="0.1" value="${t.yellowMax ?? 32}">
-        <label>红色预警下限</label><input name="temperature.redMin" type="number" step="0.1" value="${t.redMin ?? 18}">
-        <label>红色预警上限</label><input name="temperature.redMax" type="number" step="0.1" value="${t.redMax ?? 35}">
-        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">盐度阈值</h3>
-        <label>黄色预警下限</label><input name="salinity.yellowMin" type="number" step="0.1" value="${s.yellowMin ?? 15}">
-        <label>黄色预警上限</label><input name="salinity.yellowMax" type="number" step="0.1" value="${s.yellowMax ?? 30}">
-        <label>红色预警下限</label><input name="salinity.redMin" type="number" step="0.1" value="${s.redMin ?? 10}">
-        <label>红色预警上限</label><input name="salinity.redMax" type="number" step="0.1" value="${s.redMax ?? 35}">
-        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">溶氧阈值（mg/L）</h3>
-        <label>黄色预警上限（低于此值）</label><input name="oxygen.yellowMax" type="number" step="0.1" value="${o.yellowMax ?? 4.5}">
-        <label>红色预警上限（低于此值）</label><input name="oxygen.redMax" type="number" step="0.1" value="${o.redMax ?? 3}">
-        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">死亡率阈值（%）</h3>
-        <label>黄色预警下限</label><input name="mortality.yellowMin" type="number" step="0.1" value="${m.yellowMin ?? 2}">
-        <label>红色预警下限</label><input name="mortality.redMin" type="number" step="0.1" value="${m.redMin ?? 5}">
-        <h3 style="font-size:15px;margin:12px 0 6px;color:var(--blue);">异常文本关键词</h3>
-        <label>关键词（用中文顿号「、」分隔）</label><textarea name="abnormalKeywords">${keywords}</textarea>
+    <div class="modal modal-wide">
+      <h2>${isEdit ? "编辑阈值规则" : "新增阈值规则"}</h2>
+      <form id="ruleEditorForm">
+        <h3 style="font-size:14px;margin:12px 0 6px;color:var(--blue);">规则基本信息</h3>
+        <div class="thresholds-row">
+          <label>规则名称</label>
+          <input name="name" required value="${rule.name || ""}" placeholder="例如：崂山场区南美白对虾仔虾期">
+        </div>
+        <div class="thresholds-row">
+          <label>适用场区</label>
+          <select name="farmId">
+            <option value="">全部场区（不限制）</option>
+            ${farms.map((f) => `<option value="${f.id}" ${rule.farmId === f.id ? "selected" : ""}>${f.name}</option>`).join("")}
+          </select>
+          <label>适用品种</label>
+          <select name="species">
+            <option value="">全部品种（不限制）</option>
+            ${speciesList.map((sp) => `<option value="${sp}" ${rule.species === sp ? "selected" : ""}>${sp}</option>`).join("")}
+          </select>
+        </div>
+        <div class="thresholds-row">
+          <label>育苗阶段</label>
+          <select name="stage">
+            ${HATCHERY_STAGES_CLIENT.map((s) => `<option value="${s.key}" ${rule.stage === s.key ? "selected" : ""}>${s.label}</option>`).join("")}
+          </select>
+          ${rule.isDefault ? "" : `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" name="isDefault" ${rule.isDefault ? "checked" : ""}> 设为默认规则</label>`}
+        </div>
+        <div class="meta" style="margin:8px 0;padding:8px;background:#f8faf9;border-radius:6px;font-size:12px;">
+          匹配优先级：场区 > 品种 > 育苗阶段。匹配维度越具体优先级越高。留空表示不限制该维度。
+        </div>
+        ${buildThresholdsForm("th", rule.thresholds)}
         <div class="modal-actions">
-          <button type="button" class="secondary" id="cancelBtn">取消</button>
-          <button type="submit">保存配置</button>
+          <button type="button" class="secondary" id="cancelRuleBtn">取消</button>
+          <button type="submit">${isEdit ? "保存修改" : "创建规则"}</button>
         </div>
       </form>
     </div>
   `;
   document.body.appendChild(modal);
-  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.querySelector("#cancelRuleBtn").onclick = () => modal.remove();
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  modal.querySelector("#thresholdForm").onsubmit = async (ev) => {
+
+  modal.querySelector("#ruleEditorForm").onsubmit = async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target).entries());
-    const parseNum = (v) => (v !== "" && v != null ? Number(v) : undefined);
+    const formData = new FormData(ev.target);
     const payload = {
-      temperature: {
-        yellowMin: parseNum(data["temperature.yellowMin"]),
-        yellowMax: parseNum(data["temperature.yellowMax"]),
-        redMin: parseNum(data["temperature.redMin"]),
-        redMax: parseNum(data["temperature.redMax"]),
-      },
-      salinity: {
-        yellowMin: parseNum(data["salinity.yellowMin"]),
-        yellowMax: parseNum(data["salinity.yellowMax"]),
-        redMin: parseNum(data["salinity.redMin"]),
-        redMax: parseNum(data["salinity.redMax"]),
-      },
-      oxygen: {
-        yellowMax: parseNum(data["oxygen.yellowMax"]),
-        redMax: parseNum(data["oxygen.redMax"]),
-      },
-      mortality: {
-        yellowMin: parseNum(data["mortality.yellowMin"]),
-        redMin: parseNum(data["mortality.redMin"]),
-      },
-      abnormalKeywords: data.abnormalKeywords
-        ? data.abnormalKeywords.split("、").map((s) => s.trim()).filter(Boolean)
-        : [],
+      name: formData.get("name") || "未命名规则",
+      farmId: formData.get("farmId") || "",
+      species: formData.get("species") || "",
+      stage: formData.get("stage") || "",
+      isDefault: formData.get("isDefault") === "on",
+      thresholds: parseThresholdsFromForm(formData, "th"),
     };
     try {
-      await api("/api/warnings/thresholds", {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
+      let result;
+      if (isEdit) {
+        result = await api("/api/warnings/thresholds/" + rule.id, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        result = await api("/api/warnings/thresholds", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
       modal.remove();
       await load();
-      renderWarnings();
+      if (onSaved) onSaved(result);
     } catch (err) {
       alert(err.message);
     }
   };
+}
+
+function openThresholdConfigModal() {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+
+  function render() {
+    const rules = db.warningThresholdRules || [];
+    const rulesHtml = rules.length
+      ? rules.map((r) => `
+          <div class="threshold-rule-card" data-rule-id="${r.id}">
+            <div class="threshold-rule-header">
+              <strong>${r.name}</strong>
+              ${r.isDefault ? '<span class="status-badge status-active" style="margin-left:8px;">默认</span>' : ""}
+              <span class="spacer"></span>
+              <button type="button" class="tiny-btn" data-action="edit">编辑</button>
+              ${r.isDefault ? "" : `<button type="button" class="tiny-btn danger" data-action="delete">删除</button>`}
+            </div>
+            <div class="meta">${describeRule(r)}</div>
+          </div>
+        `).join("")
+      : `<div class="meta" style="padding:24px;text-align:center;">暂无规则，系统使用内置默认阈值。点击下方「新增规则」创建自定义规则。</div>`;
+
+    modal.innerHTML = `
+      <div class="modal modal-wide">
+        <h2>预警阈值规则配置</h2>
+        <div class="meta" style="margin-bottom:12px;">
+          支持按<strong>场区</strong>、<strong>品种</strong>、<strong>育苗阶段</strong>配置不同阈值。生成预警时优先匹配最具体的规则，找不到则回退到默认规则。
+        </div>
+        <div class="threshold-rules-list">
+          ${rulesHtml}
+        </div>
+        <div class="threshold-config-actions">
+          <button type="button" class="secondary" id="rescanBtn">🔄 重新扫描历史记录生成预警</button>
+          <span class="spacer"></span>
+          <button type="button" class="secondary" id="closeConfigBtn">关闭</button>
+          <button type="button" id="addRuleBtn">+ 新增规则</button>
+        </div>
+      </div>
+    `;
+
+    modal.querySelector("#closeConfigBtn").onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+    modal.querySelector("#addRuleBtn").onclick = () => {
+      openRuleEditorModal(null, () => { render(); renderWarnings(); });
+    };
+
+    modal.querySelector("#rescanBtn").onclick = async () => {
+      if (!confirm("确定要根据当前规则重新扫描所有历史每日记录并重新生成预警吗？\n\n此操作会更新所有待处理和处理中的预警。")) return;
+      try {
+        const res = await api("/api/warnings/rescan", { method: "POST", body: JSON.stringify({}) });
+        alert(`重扫完成，共匹配 ${res.regeneratedCount} 条预警。`);
+        await load();
+        renderWarnings();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    modal.querySelectorAll(".threshold-rule-card").forEach((card) => {
+      const ruleId = card.dataset.ruleId;
+      const rule = rules.find((r) => r.id === ruleId);
+      card.querySelector('[data-action="edit"]').onclick = () => {
+        openRuleEditorModal(rule, () => { render(); renderWarnings(); });
+      };
+      const delBtn = card.querySelector('[data-action="delete"]');
+      if (delBtn) {
+        delBtn.onclick = async () => {
+          if (!confirm("确定要删除规则「" + rule.name + "」吗？")) return;
+          try {
+            await api("/api/warnings/thresholds/" + ruleId, { method: "DELETE" });
+            await load();
+            render();
+            renderWarnings();
+          } catch (err) {
+            alert(err.message);
+          }
+        };
+      }
+    });
+  }
+
+  (async () => {
+    try {
+      const res = await api("/api/warnings/thresholds");
+      if (res && res.rules) db.warningThresholdRules = res.rules;
+    } catch (e) {
+    }
+    document.body.appendChild(modal);
+    render();
+  })();
 }
 
 function bindWarningEvents() {
@@ -4119,6 +4330,7 @@ async function load() {
   if (!db.costItems) db.costItems = [];
   if (!db.warnings) db.warnings = [];
   if (!db.warningThresholds) db.warningThresholds = {};
+  if (!db.warningThresholdRules) db.warningThresholdRules = [];
   if (!db.inventories) db.inventories = [];
   if (!db.orders) db.orders = [];
   if (!db.shipments) db.shipments = [];
