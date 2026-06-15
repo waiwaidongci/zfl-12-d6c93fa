@@ -265,16 +265,18 @@ async function renderTrace() {
       <h2>批次血缘追踪</h2>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
         <span class="meta">血缘记录：<strong>${lineageCount}</strong> 条</span>
-        <button type="button" class="secondary tiny" id="traceLineageGraphBtn">📊 查看血缘图</button>
-        <button type="button" class="secondary tiny" id="traceContributionBtn">📈 查看来源占比</button>
+        <button type="button" class="secondary tiny" id="traceLineageGraphBtn">📊 血缘图谱</button>
+        <button type="button" class="secondary tiny" id="traceFlowAuditBtn">📈 数量流向审计</button>
+        <button type="button" class="secondary tiny" id="traceContributionBtn">🥧 来源占比</button>
       </div>
       <div id="traceLineageSummary"></div>
     `;
     const parentPanel = statsEl.parentElement;
     parentPanel.insertBefore(lineagePanel, timelineEl.parentElement);
 
-    document.getElementById("traceLineageGraphBtn").onclick = () => openLineageGraphModal(batchSelect.value);
-    document.getElementById("traceContributionBtn").onclick = () => openContributionModal(batchSelect.value);
+    document.getElementById("traceLineageGraphBtn").onclick = () => openLineageGraphModal(batchSelect.value, "graph");
+    document.getElementById("traceFlowAuditBtn").onclick = () => openLineageGraphModal(batchSelect.value, "audit");
+    document.getElementById("traceContributionBtn").onclick = () => openLineageGraphModal(batchSelect.value, "contrib");
 
     (async () => {
       try {
@@ -3481,7 +3483,7 @@ function renderLineageList() {
           const lin = (db.lineages || []).find((l) => l.id === id);
           if (!lin) return;
           const targetBatchId = lin.targets[0]?.batchId;
-          if (targetBatchId) openContributionModal(targetBatchId);
+          if (targetBatchId) openLineageGraphModal(targetBatchId, "contrib");
         }
       };
     });
@@ -3691,18 +3693,22 @@ function openLineageModal() {
   };
 }
 
-function openLineageGraphModal(batchId) {
+function openLineageGraphModal(batchId, initialView = "graph") {
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
     <div class="modal modal-wide">
-      <h2>批次血缘图 - ${batchId}</h2>
+      <h2>批次血缘追踪 - ${batchId}</h2>
+      <div class="lineage-view-tabs">
+        <button type="button" class="lineage-view-tab active" data-view="graph">📊 血缘图谱</button>
+        <button type="button" class="lineage-view-tab" data-view="audit">📈 数量流向审计</button>
+        <button type="button" class="lineage-view-tab" data-view="contrib">🥧 来源占比</button>
+      </div>
       <div id="lineageGraphContainer" class="lineage-graph-container">
         <div class="meta" style="text-align:center;padding:40px;">加载中...</div>
       </div>
       <div class="modal-actions">
         <button type="button" class="secondary" id="closeBtn">关闭</button>
-        <button type="button" id="contribBtn">查看来源占比</button>
       </div>
     </div>
   `;
@@ -3710,19 +3716,42 @@ function openLineageGraphModal(batchId) {
 
   modal.querySelector("#closeBtn").onclick = () => modal.remove();
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  modal.querySelector("#contribBtn").onclick = () => {
-    modal.remove();
-    openContributionModal(batchId);
-  };
 
-  (async () => {
-    try {
-      const graph = await api(`/api/lineage/${batchId}/graph`);
-      renderLineageGraphSVG(modal.querySelector("#lineageGraphContainer"), graph);
-    } catch (err) {
-      modal.querySelector("#lineageGraphContainer").innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+  let currentView = initialView;
+  const container = modal.querySelector("#lineageGraphContainer");
+  const tabs = modal.querySelectorAll(".lineage-view-tab");
+
+  function switchView(view) {
+    currentView = view;
+    tabs.forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+    container.innerHTML = '<div class="meta" style="text-align:center;padding:40px;">加载中...</div>';
+
+    if (view === "graph") {
+      api(`/api/lineage/${batchId}/graph`)
+        .then((graph) => renderLineageGraphSVG(container, graph))
+        .catch((err) => {
+          container.innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+        });
+    } else if (view === "audit") {
+      api(`/api/lineage/${batchId}/flow-audit`)
+        .then((audit) => renderFlowAuditView(container, audit, batchId))
+        .catch((err) => {
+          container.innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+        });
+    } else if (view === "contrib") {
+      api(`/api/lineage/${batchId}/contributions`)
+        .then((result) => renderContributionView(container, result))
+        .catch((err) => {
+          container.innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
+        });
     }
-  })();
+  }
+
+  tabs.forEach((tab) => {
+    tab.onclick = () => switchView(tab.dataset.view);
+  });
+
+  switchView(initialView);
 }
 
 function renderLineageGraphSVG(container, graph) {
@@ -3851,37 +3880,7 @@ function renderLineageGraphSVG(container, graph) {
 }
 
 function openContributionModal(batchId) {
-  const modal = document.createElement("div");
-  modal.className = "modal-overlay";
-  modal.innerHTML = `
-    <div class="modal modal-wide">
-      <h2>来源占比分析 - ${batchId}</h2>
-      <div id="contributionContainer" class="contribution-container">
-        <div class="meta" style="text-align:center;padding:40px;">加载中...</div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="secondary" id="closeBtn">关闭</button>
-        <button type="button" id="graphBtn">查看血缘图</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  modal.querySelector("#closeBtn").onclick = () => modal.remove();
-  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  modal.querySelector("#graphBtn").onclick = () => {
-    modal.remove();
-    openLineageGraphModal(batchId);
-  };
-
-  (async () => {
-    try {
-      const result = await api(`/api/lineage/${batchId}/contributions`);
-      renderContributionView(modal.querySelector("#contributionContainer"), result);
-    } catch (err) {
-      modal.querySelector("#contributionContainer").innerHTML = `<div class="meta" style="text-align:center;color:var(--warn);padding:20px;">加载失败：${err.message}</div>`;
-    }
-  })();
+  openLineageGraphModal(batchId, "contrib");
 }
 
 function renderContributionView(container, result) {
@@ -3934,6 +3933,167 @@ function renderContributionView(container, result) {
   html += `<circle cx="80" cy="80" r="40" fill="white"/>`;
   html += `<text x="80" y="84" text-anchor="middle" fill="#1d2930" font-size="13" font-weight="700">来源占比</text>`;
   html += "</svg></div>";
+
+  container.innerHTML = html;
+}
+
+function renderFlowAuditView(container, audit, batchId) {
+  const events = audit.events || [];
+  const riskSummary = audit.riskSummary || { total: 0, errors: 0, warnings: 0, byType: {} };
+  const sourceComposition = audit.sourceComposition || [];
+
+  let html = "";
+
+  html += `<div class="flow-audit-summary">
+    <div class="flow-audit-batch-info">
+      <h3>${audit.batchId} · ${audit.species || ""}</h3>
+      <div class="meta">孵化日期：${audit.hatchDate || "-"}</div>
+      <div class="meta">当前池：${audit.currentPool || "-"}</div>
+      <div class="meta">估算数量：<strong>${(audit.currentEstimatedCount || 0).toLocaleString()} 尾</strong></div>
+    </div>
+    <div class="flow-audit-risks">
+      <div class="flow-audit-risk-total">
+        <span class="label">风险总数</span>
+        <strong class="${riskSummary.errors > 0 ? "risk-error" : ""}">${riskSummary.total} 项</strong>
+      </div>
+      <div class="flow-audit-risk-item">
+        <span class="risk-dot risk-dot-error"></span>
+        <span>错误：${riskSummary.errors}</span>
+      </div>
+      <div class="flow-audit-risk-item">
+        <span class="risk-dot risk-dot-warning"></span>
+        <span>警告：${riskSummary.warnings}</span>
+      </div>
+    </div>
+  </div>`;
+
+  if (sourceComposition.length > 0) {
+    const maxPct = Math.max(...sourceComposition.map((c) => c.percentage || 0));
+    html += `<div class="flow-audit-composition">
+      <h4>来源构成</h4>
+      <div class="composition-bars">
+        ${sourceComposition.map((c, idx) => {
+          const colors = ["#5a7a52", "#216778", "#8b6914", "#a84e35", "#60727a", "#b58900"];
+          const color = colors[idx % colors.length];
+          const barW = maxPct > 0 ? ((c.percentage || 0) / maxPct) * 100 : 0;
+          return `
+          <div class="composition-item">
+            <div class="composition-header">
+              <span class="composition-batch" style="color:${color};">${c.batchId}</span>
+              <span class="composition-pct" style="color:${color};">${c.percentage?.toFixed(1) || "0"}%</span>
+            </div>
+            <div class="composition-bar-bg">
+              <div class="composition-bar-fill" style="width:${barW}%;background:${color};"></div>
+            </div>
+            <div class="meta" style="font-size:11px;">贡献 ${(c.contributionCount || 0).toLocaleString()} 尾 · 现有 ${(c.estimatedCount || 0).toLocaleString()} 尾</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
+  html += `<div class="flow-audit-timeline">
+    <h4>数量流向明细（${events.length} 次操作）</h4>`;
+
+  if (events.length === 0) {
+    html += `<div class="meta" style="text-align:center;padding:24px;">该批次暂无血缘操作记录</div>`;
+  } else {
+    html += `<div class="flow-events">`;
+
+    const typeColors = { split: "#5a7a52", merge: "#216778", mix: "#8b6914" };
+    const typeBgColors = { split: "#e8f5e9", merge: "#e0f2f7", mix: "#fff8e1" };
+
+    events.forEach((evt, idx) => {
+      const changeClass = evt.countChange >= 0 ? "change-positive" : "change-negative";
+      const changePrefix = evt.countChange >= 0 ? "+" : "";
+      const typeColor = typeColors[evt.type] || "#60727a";
+      const typeBg = typeBgColors[evt.type] || "#f5f5f5";
+
+      html += `
+      <div class="flow-event ${evt.risks && evt.risks.length > 0 ? "has-risk" : ""}" style="border-left-color:${typeColor};">
+        <div class="flow-event-header">
+          <span class="flow-event-type" style="background:${typeBg};color:${typeColor};">${evt.typeLabel}</span>
+          <span class="flow-event-date">${evt.date}</span>
+          ${evt.risks && evt.risks.length > 0 ? `<span class="flow-event-risk-badge">⚠ ${evt.risks.length}</span>` : ""}
+        </div>
+        <div class="flow-event-body">
+          <div class="flow-event-counts">
+            <div class="flow-count-item">
+              <span class="label">操作前</span>
+              <strong>${evt.countBefore.toLocaleString()} 尾</strong>
+            </div>
+            <div class="flow-count-arrow">→</div>
+            <div class="flow-count-item">
+              <span class="label">操作后</span>
+              <strong>${evt.countAfter.toLocaleString()} 尾</strong>
+            </div>
+            <div class="flow-count-change ${changeClass}">
+              ${changePrefix}${evt.countChange.toLocaleString()} 尾
+            </div>
+          </div>
+          <div class="flow-event-detail">
+            ${evt.isSource ? `
+              <div class="flow-event-section">
+                <span class="section-label">作为来源：</span>
+                <span>贡献 ${(evt.sources?.find((s) => s.batchId === batchId)?.contributionCount || 0).toLocaleString()} 尾</span>
+              </div>
+            ` : ""}
+            ${evt.isTarget ? `
+              <div class="flow-event-section">
+                <span class="section-label">作为目标：</span>
+                <span>接收 ${(evt.targets?.find((t) => t.batchId === batchId)?.receivedCount || 0).toLocaleString()} 尾</span>
+              </div>
+            ` : ""}
+            ${evt.otherBatches && evt.otherBatches.length > 0 ? `
+              <div class="flow-event-section">
+                <span class="section-label">关联批次：</span>
+                <div class="flow-other-batches">
+                  ${evt.otherBatches.map((b) => `
+                    <span class="flow-batch-tag ${b.role}">
+                      ${b.role === "source" ? "←" : "→"} ${b.id}
+                      (${b.count?.toLocaleString() || 0}尾)
+                    </span>
+                  `).join("")}
+                </div>
+              </div>
+            ` : ""}
+            ${evt.poolChange ? `
+              <div class="flow-event-section">
+                <span class="section-label">转移到：</span>
+                <span>${evt.poolChange}</span>
+              </div>
+            ` : ""}
+            ${evt.poolAfter ? `
+              <div class="flow-event-section">
+                <span class="section-label">当前池：</span>
+                <span>${evt.poolAfter}</span>
+              </div>
+            ` : ""}
+            ${evt.reason ? `
+              <div class="flow-event-section">
+                <span class="section-label">原因：</span>
+                <span>${evt.reason}</span>
+              </div>
+            ` : ""}
+          </div>
+          ${evt.risks && evt.risks.length > 0 ? `
+            <div class="flow-event-risks">
+              ${evt.risks.map((r) => `
+                <div class="flow-risk-item risk-${r.level}">
+                  <span class="risk-icon">${r.level === "error" ? "✕" : "⚠"}</span>
+                  <span class="risk-text">${r.message}</span>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+      </div>`;
+    });
+
+    html += `</div>`;
+  }
+
+  html += `</div>`;
 
   container.innerHTML = html;
 }

@@ -390,6 +390,276 @@ function validateDateOrder(db, sources, targets, date) {
   return null;
 }
 
+function validateFarmIsolation(db, sources, targets, farmId) {
+  const sourceFarmIds = new Set();
+  const targetFarmIds = new Set();
+
+  for (const src of sources) {
+    const batch = db.batches.find((b) => b.id === src.batchId);
+    if (batch) {
+      sourceFarmIds.add(batch.farmId || getDefaultFarmId(db));
+    }
+  }
+
+  for (const tgt of targets) {
+    const batch = db.batches.find((b) => b.id === tgt.batchId);
+    if (batch) {
+      targetFarmIds.add(batch.farmId || getDefaultFarmId(db));
+    }
+  }
+
+  const allFarmIds = new Set([...sourceFarmIds, ...targetFarmIds]);
+  if (allFarmIds.size > 1) {
+    return {
+      hasRisk: true,
+      message: `跨场区血缘操作：涉及 ${allFarmIds.size} 个场区（${[...allFarmIds].join("、")}），请确认是否允许跨场区混养`,
+      farmIds: [...allFarmIds],
+    };
+  }
+
+  return { hasRisk: false, message: null, farmIds: [] };
+}
+
+function validateCountBalance(sources, targets) {
+  const totalSource = sources.reduce((sum, s) => sum + Number(s.contributionCount || 0), 0);
+  const totalTarget = targets.reduce((sum, t) => sum + Number(t.receivedCount || 0), 0);
+  const diff = totalTarget - totalSource;
+  const diffPercent = totalSource > 0 ? (diff / totalSource) * 100 : 0;
+
+  if (totalSource > 0 && totalTarget > 0 && Math.abs(diffPercent) > 0.01) {
+    return {
+      hasRisk: true,
+      message: `数量不平衡：来源总量 ${totalSource.toLocaleString()} 尾，目标总量 ${totalTarget.toLocaleString()} 尾，差异 ${diff >= 0 ? "+" : ""}${diff.toLocaleString()} 尾（${diffPercent.toFixed(2)}%）`,
+      totalSource,
+      totalTarget,
+      diff,
+      diffPercent,
+    };
+  }
+
+  return {
+    hasRisk: false,
+    totalSource,
+    totalTarget,
+    diff,
+    diffPercent,
+  };
+}
+
+function detectLineageRisks(db, lineage) {
+  const risks = [];
+
+  const countBalance = validateCountBalance(lineage.sources, lineage.targets);
+  if (countBalance.hasRisk) {
+    risks.push({
+      type: "count_imbalance",
+      level: "warning",
+      message: countBalance.message,
+      detail: {
+        totalSource: countBalance.totalSource,
+        totalTarget: countBalance.totalTarget,
+        diff: countBalance.diff,
+        diffPercent: countBalance.diffPercent,
+      },
+    });
+  }
+
+  const farmIsolation = validateFarmIsolation(db, lineage.sources, lineage.targets, lineage.farmId);
+  if (farmIsolation.hasRisk) {
+    risks.push({
+      type: "cross_farm",
+      level: "warning",
+      message: farmIsolation.message,
+      detail: { farmIds: farmIsolation.farmIds },
+    });
+  }
+
+  for (const src of lineage.sources) {
+    const batch = db.batches.find((b) => b.id === src.batchId);
+    if (batch && lineage.date < batch.hatchDate) {
+      risks.push({
+        type: "date_inversion",
+        level: "error",
+        message: `日期倒挂：来源批次 ${src.batchId} 孵化日期 ${batch.hatchDate} 晚于血缘操作日期 ${lineage.date}`,
+        detail: { batchId: src.batchId, hatchDate: batch.hatchDate, lineageDate: lineage.date },
+      });
+    }
+  }
+
+  for (const tgt of lineage.targets) {
+    const batch = db.batches.find((b) => b.id === tgt.batchId);
+    if (batch && lineage.date < batch.hatchDate) {
+      risks.push({
+        type: "date_inversion",
+        level: "error",
+        message: `日期倒挂：目标批次 ${tgt.batchId} 孵化日期 ${batch.hatchDate} 晚于血缘操作日期 ${lineage.date}`,
+        detail: { batchId: tgt.batchId, hatchDate: batch.hatchDate, lineageDate: lineage.date },
+      });
+    }
+  }
+
+  const cycleError = validateNoCycle(db, lineage.sources, lineage.targets, lineage.type, lineage.date);
+  if (cycleError) {
+    risks.push({
+      type: "cycle",
+      level: "error",
+      message: cycleError,
+      detail: {},
+    });
+  }
+
+  return risks;
+}
+
+function buildFlowAudit(db, batchId, farmId) {
+  const lineages = farmId
+    ? (db.lineages || []).filter((l) => l.farmId === farmId)
+    : (db.lineages || []);
+
+  const batch = (db.batches || []).find((b) => b.id === batchId);
+  if (!batch) {
+    return null;
+  }
+
+  const batchLineages = lineages.filter((l) =>
+    l.sources.some((s) => s.batchId === batchId) ||
+    l.targets.some((t) => t.batchId === batchId)
+  ).sort((a, b) => a.date.localeCompare(b.date));
+
+  let totalChange = 0;
+  for (const lin of batchLineages) {
+    const sourceEntry = lin.sources.find((s) => s.batchId === batchId);
+    const targetEntry = lin.targets.find((t) => t.batchId === batchId);
+    if (sourceEntry) totalChange -= Number(sourceEntry.contributionCount || 0);
+    if (targetEntry) totalChange += Number(targetEntry.receivedCount || 0);
+  }
+
+  const initialCount = Number(batch.estimatedCount || 0) - totalChange;
+  const events = [];
+  let runningCount = initialCount;
+  let poolAfter = "";
+
+  for (const lin of batchLineages) {
+    const isSource = lin.sources.some((s) => s.batchId === batchId);
+    const isTarget = lin.targets.some((t) => t.batchId === batchId);
+    const sourceEntry = lin.sources.find((s) => s.batchId === batchId);
+    const targetEntry = lin.targets.find((t) => t.batchId === batchId);
+
+    const countBefore = runningCount;
+    let countChange = 0;
+    if (isSource && sourceEntry) {
+      countChange -= Number(sourceEntry.contributionCount || 0);
+    }
+    if (isTarget && targetEntry) {
+      countChange += Number(targetEntry.receivedCount || 0);
+    }
+    const countAfter = countBefore + countChange;
+    runningCount = countAfter;
+
+    let poolChange = null;
+    if (isTarget && targetEntry && targetEntry.toPool) {
+      poolChange = targetEntry.toPool;
+      poolAfter = targetEntry.toPool;
+    }
+
+    const otherBatches = [];
+    if (lin.sources.length > 1 || lin.targets.length > 1 ||
+        (lin.sources.length === 1 && lin.targets.length === 1 && lin.sources[0].batchId !== lin.targets[0].batchId)) {
+      for (const src of lin.sources) {
+        if (src.batchId !== batchId) {
+          const srcBatch = (db.batches || []).find((b) => b.id === src.batchId);
+          otherBatches.push({
+            id: src.batchId,
+            role: "source",
+            species: srcBatch ? srcBatch.species : "",
+            count: src.contributionCount,
+            ratio: src.ratio,
+            farmId: srcBatch ? srcBatch.farmId : "",
+          });
+        }
+      }
+      for (const tgt of lin.targets) {
+        if (tgt.batchId !== batchId) {
+          const tgtBatch = (db.batches || []).find((b) => b.id === tgt.batchId);
+          otherBatches.push({
+            id: tgt.batchId,
+            role: "target",
+            species: tgtBatch ? tgtBatch.species : "",
+            count: tgt.receivedCount,
+            ratio: tgt.ratio,
+            farmId: tgtBatch ? tgtBatch.farmId : "",
+          });
+        }
+      }
+    }
+
+    const risks = detectLineageRisks(db, lin);
+
+    events.push({
+      lineageId: lin.id,
+      type: lin.type,
+      typeLabel: LINEAGE_TYPES[lin.type] || lin.type,
+      date: lin.date,
+      reason: lin.reason || "",
+      operator: lin.operator || "",
+      isSource,
+      isTarget,
+      countBefore,
+      countAfter,
+      countChange,
+      poolAfter: poolAfter || (batch.currentPool || ""),
+      poolChange,
+      otherBatches,
+      risks,
+      sources: lin.sources,
+      targets: lin.targets,
+    });
+  }
+
+  const allRisks = [];
+  for (const evt of events) {
+    for (const risk of evt.risks) {
+      allRisks.push({
+        ...risk,
+        lineageId: evt.lineageId,
+        date: evt.date,
+        type: evt.type,
+      });
+    }
+  }
+
+  const contribution = computeContribution(db, batchId, farmId);
+  const sourceComposition = contribution.map((c) => ({
+    batchId: c.batchId,
+    species: c.species,
+    estimatedCount: c.estimatedCount,
+    percentage: c.percentage || 0,
+    contributionCount: c.contributionCount || 0,
+  }));
+
+  return {
+    batchId,
+    currentEstimatedCount: Number(batch.estimatedCount || 0),
+    currentPool: batch.currentPool || "",
+    hatchDate: batch.hatchDate || "",
+    species: batch.species || "",
+    initialCount,
+    totalChange,
+    events,
+    risks: allRisks,
+    riskSummary: {
+      total: allRisks.length,
+      errors: allRisks.filter((r) => r.level === "error").length,
+      warnings: allRisks.filter((r) => r.level === "warning").length,
+      byType: allRisks.reduce((acc, r) => {
+        acc[r.type] = (acc[r.type] || 0) + 1;
+        return acc;
+      }, {}),
+    },
+    sourceComposition,
+  };
+}
+
 export function createLineageRouter(helpers) {
   const { loadDb, saveDb, sendJson, body } = helpers;
 
@@ -418,6 +688,34 @@ export function createLineageRouter(helpers) {
       }
       const contributions = computeContribution(db, batchId, farmId);
       return sendJson(res, 200, { batchId, contributions });
+    }
+
+    const auditMatch = pathname.match(/^\/api\/lineage\/([^/]+)\/flow-audit$/);
+    if (auditMatch && method === "GET") {
+      const db = await loadDb();
+      const batchId = auditMatch[1];
+      const farmId = getFarmIdFromQuery(req);
+      const batch = db.batches.find((b) => b.id === batchId);
+      if (!batch) {
+        return sendJson(res, 404, { error: "批次不存在" });
+      }
+      const audit = buildFlowAudit(db, batchId, farmId);
+      if (!audit) {
+        return sendJson(res, 404, { error: "无法生成数量流向审计" });
+      }
+      return sendJson(res, 200, audit);
+    }
+
+    const validateMatch = pathname.match(/^\/api\/lineage\/([^/]+)\/validate$/);
+    if (validateMatch && method === "POST") {
+      const db = await loadDb();
+      const lineageId = validateMatch[1];
+      const lineage = (db.lineages || []).find((l) => l.id === lineageId);
+      if (!lineage) {
+        return sendJson(res, 404, { error: "血缘记录不存在" });
+      }
+      const risks = detectLineageRisks(db, lineage);
+      return sendJson(res, 200, { lineageId, risks });
     }
 
     if (method === "GET" && pathname === "/api/lineage") {

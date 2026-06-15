@@ -2488,3 +2488,375 @@ button.tiny:disabled {
   max-width: 720px !important;
   width: 90% !important;
 }
+
+.lineage-view-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.lineage-view-tab {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: #f7f9f9;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.lineage-view-tab:hover {
+  background: #eef5f4;
+  color: var(--ink);
+}
+
+.lineage-view-tab.active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+
+.flow-audit-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 14px;
+  background: #f7faf9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.flow-audit-batch-info h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.flow-audit-batch-info .meta {
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.flow-audit-batch-info strong {
+  color: var(--green);
+  font-size: 16px;
+}
+
+.flow-audit-risks {
+  text-align: right;
+}
+
+.flow-audit-risk-total {
+  margin-bottom: 6px;
+}
+
+.flow-audit-risk-total .label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 8px;
+}
+
+.flow-audit-risk-total strong {
+  font-size: 20px;
+  color: var(--muted);
+}
+
+.flow-audit-risk-total strong.risk-error {
+  color: var(--warn);
+}
+
+.flow-audit-risk-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0;
+}
+
+.risk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.risk-dot-error {
+  background: var(--warn);
+}
+
+.risk-dot-warning {
+  background: var(--yellow);
+}
+
+.flow-audit-composition {
+  padding: 14px;
+  background: #f7faf9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.flow-audit-composition h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.composition-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composition-item {
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.composition-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.composition-batch {
+  font-weight: 700;
+}
+
+.composition-pct {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.composition-bar-bg {
+  height: 6px;
+  background: #e6eef0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.composition-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.flow-audit-timeline {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.flow-audit-timeline h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--ink);
+  position: sticky;
+  top: 0;
+  background: #fff;
+  padding-bottom: 8px;
+  z-index: 1;
+}
+
+.flow-events {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flow-event {
+  border-left: 3px solid #ccdcdb;
+  padding: 10px 12px;
+  background: #fafcfc;
+  border-radius: 0 6px 6px 0;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+}
+
+.flow-event.has-risk {
+  background: #fff8f5;
+  border-color: #f3d9d0;
+  border-left-width: 3px;
+}
+
+.flow-event-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.flow-event-type {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.flow-event-date {
+  color: var(--muted);
+  font-size: 12px;
+  flex: 1;
+}
+
+.flow-event-risk-badge {
+  background: var(--warn);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.flow-event-counts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.flow-count-item {
+  flex: 1;
+  text-align: center;
+}
+
+.flow-count-item .label {
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.flow-count-item strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.flow-count-arrow {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.flow-count-change {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 13px;
+  min-width: 80px;
+  text-align: center;
+}
+
+.flow-count-change.change-positive {
+  background: #e8f5e9;
+  color: #5a7a52;
+}
+
+.flow-count-change.change-negative {
+  background: #f3d9d0;
+  color: var(--warn);
+}
+
+.flow-event-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.flow-event-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.section-label {
+  color: var(--muted);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.flow-other-batches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.flow-batch-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.flow-batch-tag.source {
+  background: #e8f5e9;
+  color: #5a7a52;
+}
+
+.flow-batch-tag.target {
+  background: #e3f2fd;
+  color: #216778;
+}
+
+.flow-event-risks {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.flow-risk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.flow-risk-item.risk-error {
+  background: #f3d9d0;
+  color: var(--warn);
+}
+
+.flow-risk-item.risk-warning {
+  background: #fff4d6;
+  color: #8b6914;
+}
+
+.risk-icon {
+  font-weight: bold;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.risk-text {
+  flex: 1;
+}
+
+button.tiny {
+  padding: 5px 10px;
+  font-size: 12px;
+}
