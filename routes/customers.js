@@ -46,7 +46,7 @@ function sanitizeCustomer(input, existing = null) {
   };
 }
 
-function buildCustomerSummary(customer, sales, batches, orders = [], shipments = []) {
+function buildCustomerSummary(customer, sales, batches, orders = [], shipments = [], farms = []) {
   const customerSales = sales.filter((s) => s.customerId === customer.id || s.customer === customer.name);
   const customerOrders = orders.filter(
     (o) => o.customerId === customer.id || o.customerName === customer.name
@@ -112,6 +112,7 @@ function buildCustomerSummary(customer, sales, batches, orders = [], shipments =
     return {
       batchId,
       species: batch?.species || "",
+      farmId: batch?.farmId || "",
       count: batchCount,
       amount: Math.round(batchAmount),
       lastDate,
@@ -130,6 +131,73 @@ function buildCustomerSummary(customer, sales, batches, orders = [], shipments =
     0
   );
 
+  const farmIds = [...new Set([
+    ...customerSales.map((s) => s.farmId).filter(Boolean),
+    ...customerOrders.map((o) => o.farmId).filter(Boolean),
+    ...customerShipments.map((s) => s.farmId).filter(Boolean),
+    ...batchSummaries.map((b) => b.farmId).filter(Boolean),
+  ])];
+
+  const byFarm = farmIds.map((farmId) => {
+    const farm = (farms || []).find((f) => f.id === farmId);
+    const farmSales = customerSales.filter((s) => s.farmId === farmId);
+    const farmOrders = customerOrders.filter((o) => o.farmId === farmId);
+    const farmShipments = customerShipments.filter((s) => s.farmId === farmId);
+    const farmBatches = batchSummaries.filter((b) => b.farmId === farmId);
+
+    const farmOldSalesCount = farmSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
+    const farmOldSalesAmount = farmSales.reduce(
+      (sum, s) => sum + Number(s.count || 0) * Number(s.unitPrice || 0),
+      0
+    );
+
+    const farmShipmentCount = farmShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
+    const farmShipmentAmount = farmShipments.reduce((sum, s) => {
+      const order = orders.find((o) => o.id === s.orderId);
+      const unitPrice = order?.unitPrice || 0;
+      return sum + Number(s.quantity || 0) * Number(unitPrice || 0);
+    }, 0);
+
+    const farmValidOrders = farmOrders.filter((o) => o.status !== "cancelled");
+    const farmOrderQty = farmValidOrders.reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
+    const farmOrderAmount = farmValidOrders.reduce(
+      (sum, o) => sum + Number(o.orderQuantity || 0) * Number(o.unitPrice || 0),
+      0
+    );
+
+    const farmSalesDates = farmSales.map((s) => s.date);
+    const farmShipmentDates = farmShipments.map((s) => s.date);
+    const farmOrderDates = farmOrders.map((o) => o.deliveryDate).filter(Boolean);
+    const farmAllDates = [...farmSalesDates, ...farmShipmentDates, ...farmOrderDates];
+    const farmLastDate = farmAllDates.sort().reverse()[0] || "";
+
+    return {
+      farmId,
+      farmName: farm?.name || farmId,
+      orderCount: farmSales.length + farmOrders.length,
+      totalCount: farmOldSalesCount + farmShipmentCount,
+      totalAmount: Math.round(farmOldSalesAmount + farmShipmentAmount),
+      batches: farmBatches,
+      orderStats: {
+        totalOrders: farmOrders.length,
+        pendingOrders: farmOrders.filter((o) => o.status === "pending").length,
+        partialOrders: farmOrders.filter((o) => o.status === "partial").length,
+        completedOrders: farmOrders.filter((o) => o.status === "completed").length,
+        cancelledOrders: farmOrders.filter((o) => o.status === "cancelled").length,
+        totalOrderQuantity: farmOrderQty,
+        totalOrderAmount: Math.round(farmOrderAmount),
+        totalShippedQuantity: farmShipmentCount,
+        totalShippedAmount: Math.round(farmShipmentAmount),
+        totalRemainingQuantity: farmOrderQty - farmShipmentCount,
+      },
+      oldSales: {
+        count: farmOldSalesCount,
+        amount: Math.round(farmOldSalesAmount),
+      },
+      lastDate: farmLastDate,
+    };
+  }).sort((a, b) => b.totalAmount - a.totalAmount);
+
   return {
     ...customer,
     purchaseSummary: {
@@ -137,6 +205,7 @@ function buildCustomerSummary(customer, sales, batches, orders = [], shipments =
       totalCount,
       totalAmount: Math.round(totalAmount),
       batches: batchSummaries,
+      byFarm,
       orderStats: {
         totalOrders: customerOrders.length,
         pendingOrders: customerOrders.filter((o) => o.status === "pending").length,
@@ -164,7 +233,7 @@ export function createCustomersRouter(helpers) {
     if (method === "GET" && pathname === "/api/customers") {
       const db = await loadDb();
       const customers = (db.customers || []).map((c) =>
-        buildCustomerSummary(c, db.sales || [], db.batches || [], db.orders || [], db.shipments || [])
+        buildCustomerSummary(c, db.sales || [], db.batches || [], db.orders || [], db.shipments || [], db.farms || [])
       );
       return sendJson(res, 200, customers);
     }
@@ -185,7 +254,8 @@ export function createCustomersRouter(helpers) {
           db.sales || [],
           db.batches || [],
           db.orders || [],
-          db.shipments || []
+          db.shipments || [],
+          db.farms || []
         );
         return sendJson(res, 200, customer);
       }

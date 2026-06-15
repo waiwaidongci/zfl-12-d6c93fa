@@ -19,6 +19,7 @@ import { createDataIoRouter } from "./routes/data-io.js";
 import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm, migrateFarmCostCategories } from "./routes/farms.js";
 import { createAuditLogRouter } from "./routes/audit-log.js";
 import { createLineageRouter, migrateTransfersToLineage } from "./routes/lineage.js";
+import { createOverviewRouter } from "./routes/overview.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -158,6 +159,7 @@ const dataIoRouter = createDataIoRouter(helpers);
 const farmsRouter = createFarmsRouter(helpers);
 const auditLogRouter = createAuditLogRouter(helpers);
 const lineageRouter = createLineageRouter(helpers);
+const overviewRouter = createOverviewRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -212,6 +214,9 @@ async function routeApi(req, res, url, method) {
 
   const result15 = await lineageRouter(req, res, pathname, method);
   if (result15 !== false) return result15;
+
+  const result16 = await overviewRouter(req, res, pathname, method);
+  if (result16 !== false) return result16;
 
   return false;
 }

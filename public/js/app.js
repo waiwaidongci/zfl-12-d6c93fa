@@ -97,11 +97,15 @@ const forms = {
     '<h2>操作日志</h2><div class="auditlog-toolbar"><select id="auditlogActionFilter"><option value="">全部操作</option></select><select id="auditlogTargetFilter"><option value="">全部对象</option></select><input id="auditlogOperatorSearch" placeholder="操作者..."><input id="auditlogStartDate" type="date" placeholder="开始日期"><input id="auditlogEndDate" type="date" placeholder="结束日期"><div class="spacer"></div><button type="button" id="auditlogRollbackBtn" class="secondary" style="background:#a84e35;color:#fff;">↩ 撤销最近操作</button></div><div class="auditlog-stats" id="auditlogStats"></div><div class="auditlog-list" id="auditlogList"></div><div class="auditlog-pagination" id="auditlogPagination"></div>',
   lineage:
     '<h2>批次血缘追踪</h2><div class="lineage-toolbar"><select id="lineageTypeFilter"><option value="">全部类型</option><option value="split">批次拆分</option><option value="merge">批次合并</option><option value="mix">混养分配</option></select><select id="lineageBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addLineageBtn">+ 新增血缘</button></div><div class="lineage-stats" id="lineageStats"></div><div class="lineage-list" id="lineageList"></div>',
+  overview:
+    '<h2>跨场区经营总览</h2><div class="overview-total-stats" id="overviewTotalStats"></div><h3 style="margin:18px 0 10px;">各场区详情</h3><div class="overview-farm-grid" id="overviewFarmGrid"></div>',
 };
 
 let db = {};
 let activeTab = "record";
 let currentFarmId = localStorage.getItem("currentFarmId") || null;
+let viewMode = localStorage.getItem("viewMode") || "farm";
+let overviewData = null;
 
 const form = document.querySelector("#recordForm");
 const tabs = document.querySelectorAll(".tabs button");
@@ -868,6 +872,8 @@ function renderCustomerList() {
     .map(
       (c) => {
         const summary = c.purchaseSummary || {};
+        const byFarm = summary.byFarm || [];
+        const hasMultiFarm = byFarm.length > 1;
         const batchList = (summary.batches || [])
           .slice(0, 3)
           .map(
@@ -877,6 +883,23 @@ function renderCustomerList() {
               }</span>`
           )
           .join("");
+
+        const farmBreakdown = hasMultiFarm ? `
+          <div class="customer-farm-breakdown">
+            <div class="farm-breakdown-title">
+              <span class="meta">按场区拆分</span>
+            </div>
+            <div class="farm-breakdown-list">
+              ${byFarm.map((farm) => `
+                <div class="farm-breakdown-item">
+                  <span class="farm-name">${farm.farmName}</span>
+                  <span class="farm-stats">${farm.orderCount}单 / ¥${farm.totalAmount.toLocaleString()}</span>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : "";
+
         return `
     <div class="customer-card" data-id="${c.id}">
       <h3>${c.name}</h3>
@@ -894,6 +917,7 @@ function renderCustomerList() {
                 <span class="purchase-count">${summary.orderCount} 单 / ${summary.totalAmount} 元</span>
               </div>
               <div class="purchase-batches">${batchList || '<span class="meta">暂无批次记录</span>'}</div>
+              ${farmBreakdown}
              </div>`
           : `<div class="meta" style="margin-top:8px;font-size:12px;">暂无采购记录</div>`
       }
@@ -904,6 +928,7 @@ function renderCustomerList() {
       }
       <div class="customer-actions">
         <button type="button" class="secondary" data-action="edit">编辑</button>
+        <button type="button" class="secondary" data-action="detail">采购详情</button>
         <button type="button" class="danger" data-action="delete">删除</button>
       </div>
     </div>
@@ -916,8 +941,12 @@ function renderCustomerList() {
     const id = card.dataset.id;
     const editBtn = card.querySelector('[data-action="edit"]');
     const deleteBtn = card.querySelector('[data-action="delete"]');
+    const detailBtn = card.querySelector('[data-action="detail"]');
     editBtn.onclick = (e) => { e.preventDefault(); openCustomerModal(id); };
     deleteBtn.onclick = (e) => { e.preventDefault(); deleteCustomer(id); };
+    if (detailBtn) {
+      detailBtn.onclick = (e) => { e.preventDefault(); openCustomerDetailModal(id); };
+    }
   });
 }
 
@@ -1003,6 +1032,76 @@ function openCustomerModal(customerId = null, quickCreate = false, prefillName =
       }
     }, 50);
   }
+}
+
+function openCustomerDetailModal(customerId) {
+  const customers = db.customers || [];
+  const customer = customers.find((c) => c.id === customerId);
+  if (!customer) return;
+
+  const summary = customer.purchaseSummary || {};
+  const byFarm = summary.byFarm || [];
+  const orderStats = summary.orderStats || {};
+  const batches = summary.batches || [];
+
+  const farmSections = byFarm.map((farm) => {
+    const farmBatches = (farm.batches || []).slice(0, 5);
+    return `
+      <div class="detail-farm-section">
+        <h4>${farm.farmName}</h4>
+        <div class="detail-farm-stats">
+          <div class="stat"><span>订单数</span><strong>${farm.orderStats?.totalOrders || 0}</strong></div>
+          <div class="stat"><span>采购数量</span><strong>${farm.totalCount.toLocaleString()} 尾</strong></div>
+          <div class="stat"><span>采购金额</span><strong>¥${farm.totalAmount.toLocaleString()}</strong></div>
+          <div class="stat"><span>已发货</span><strong>${farm.orderStats?.totalShippedQuantity || 0} 尾</strong></div>
+        </div>
+        ${farmBatches.length > 0 ? `
+          <div class="detail-batch-list">
+            <div class="meta" style="margin:8px 0 4px;">采购批次：</div>
+            ${farmBatches.map((b) => `
+              <span class="customer-batch-tag">${b.batchId}${b.species ? " · " + b.species : ""} · ${b.count.toLocaleString()}尾</span>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal modal-large">
+      <h2>客户采购详情 - ${customer.name}</h2>
+      <div class="detail-summary">
+        <div class="row"><span class="label">客户编号</span><span>${customer.id}</span></div>
+        ${customer.contact ? `<div class="row"><span class="label">联系人</span><span>${customer.contact}</span></div>` : ""}
+        ${customer.phone ? `<div class="row"><span class="label">电话</span><span>${customer.phone}</span></div>` : ""}
+        ${customer.region ? `<div class="row"><span class="label">地区</span><span>${customer.region}</span></div>` : ""}
+      </div>
+      <h3 style="margin:14px 0 8px;">总体采购</h3>
+      <div class="detail-total-stats">
+        <div class="stat"><span>总订单数</span><strong>${orderStats.totalOrders || 0}</strong></div>
+        <div class="stat"><span>总采购数量</span><strong>${summary.totalCount?.toLocaleString() || 0} 尾</strong></div>
+        <div class="stat"><span>总采购金额</span><strong>¥${summary.totalAmount?.toLocaleString() || 0}</strong></div>
+        <div class="stat"><span>待发货</span><strong>${orderStats.totalRemainingQuantity || 0} 尾</strong></div>
+      </div>
+      ${byFarm.length > 1 ? `
+        <h3 style="margin:14px 0 8px;">按场区拆分</h3>
+        <div class="detail-farm-list">
+          ${farmSections}
+        </div>
+      ` : ""}
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeDetailBtn">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector("#closeDetailBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
 }
 
 async function deleteCustomer(customerId) {
@@ -2954,6 +3053,157 @@ async function deleteFarm(farmId) {
   }
 }
 
+async function loadOverviewData() {
+  try {
+    overviewData = await api("/api/overview");
+    return overviewData;
+  } catch (err) {
+    console.error("加载总览数据失败:", err);
+    return null;
+  }
+}
+
+function renderOverviewTotalStats() {
+  const statsEl = document.getElementById("overviewTotalStats");
+  if (!statsEl || !overviewData) return;
+
+  const t = overviewData.total;
+  const stats = [
+    ["场区总数", t.farmCount + " 个"],
+    ["批次总数", t.batchCount + " 个"],
+    ["在养数量", t.breedingCount.toLocaleString() + " 尾"],
+    ["可售数量", t.availableCount.toLocaleString() + " 尾"],
+    ["订单金额", "¥" + t.totalOrderAmount.toLocaleString()],
+    ["已发货收入", "¥" + t.shippedRevenue.toLocaleString()],
+    ["待处理预警", t.pendingWarnings + " 条"],
+    ["池子使用率", t.pondUsageRate + "%"],
+  ];
+
+  statsEl.innerHTML = `
+    <div class="overview-total-grid">
+      ${stats.map(([label, value]) => `
+        <div class="overview-stat-card">
+          <span class="overview-stat-label">${label}</span>
+          <span class="overview-stat-value">${value}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderOverviewFarmGrid() {
+  const gridEl = document.getElementById("overviewFarmGrid");
+  if (!gridEl || !overviewData) return;
+
+  const farms = overviewData.farms || [];
+  if (!farms.length) {
+    gridEl.innerHTML = '<div class="meta" style="padding:24px;text-align:center;">暂无场区数据</div>';
+    return;
+  }
+
+  gridEl.innerHTML = farms.map((farm) => {
+    const isActive = farm.farmId === getEffectiveFarmId();
+    return `
+      <div class="overview-farm-card ${isActive ? "active" : ""}" data-farm-id="${farm.farmId}">
+        <div class="overview-farm-header">
+          <h3>${farm.farmName}${farm.isDefault ? ' <span class="status-badge status-active" style="margin-left:6px;font-size:11px;">默认</span>' : ""}</h3>
+          ${isActive ? '<span class="meta">当前场区</span>' : ""}
+        </div>
+        <div class="overview-farm-stats">
+          <div class="row"><span class="label">批次数</span><span>${farm.batchCount} 个</span></div>
+          <div class="row"><span class="label">在养数量</span><span>${farm.breedingCount.toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">可售数量</span><span style="color:#2e7d57;">${farm.availableCount.toLocaleString()} 尾</span></div>
+          <div class="row"><span class="label">订单金额</span><span>¥${farm.totalOrderAmount.toLocaleString()}</span></div>
+          <div class="row"><span class="label">已发货收入</span><span style="color:#2e7d57;">¥${farm.shippedRevenue.toLocaleString()}</span></div>
+          <div class="row"><span class="label">待处理预警</span><span style="color:${farm.pendingWarnings > 0 ? "#a84e35" : "inherit"};">${farm.pendingWarnings} 条</span></div>
+          <div class="row"><span class="label">池子使用率</span><span>${farm.pondUsageRate}%</span></div>
+        </div>
+        <div class="overview-farm-actions">
+          <button type="button" class="secondary tiny" data-action="switch">切换到此场区</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  gridEl.querySelectorAll(".overview-farm-card").forEach((card) => {
+    const farmId = card.dataset.farmId;
+    const switchBtn = card.querySelector('[data-action="switch"]');
+    if (switchBtn) {
+      switchBtn.onclick = (e) => {
+        e.preventDefault();
+        setViewMode("farm");
+        setCurrentFarm(farmId);
+      };
+    }
+  });
+}
+
+function renderOverview() {
+  renderOverviewTotalStats();
+  renderOverviewFarmGrid();
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  localStorage.setItem("viewMode", mode);
+  renderViewModeSelect();
+  updateLayoutForViewMode();
+  if (mode === "overview") {
+    showOverviewTab();
+  } else {
+    setTab(activeTab || "record");
+  }
+}
+
+function renderViewModeSelect() {
+  const select = document.getElementById("viewModeSelect");
+  if (!select) return;
+  select.value = viewMode;
+  select.onchange = (e) => setViewMode(e.target.value);
+
+  const farmSelectorWrap = document.getElementById("farmSelectorWrap");
+  if (farmSelectorWrap) {
+    farmSelectorWrap.style.display = viewMode === "farm" ? "" : "none";
+  }
+}
+
+function showOverviewTab() {
+  const overviewContainer = document.getElementById("overviewContainer");
+  if (!overviewContainer) return;
+
+  form.innerHTML = "";
+  form.classList.add("hidden");
+  document.getElementById("pondContainer").classList.add("hidden");
+  document.getElementById("customerContainer").classList.add("hidden");
+  document.getElementById("costContainer").classList.add("hidden");
+  document.getElementById("warningContainer").classList.add("hidden");
+  document.getElementById("dataioContainer").classList.add("hidden");
+  document.getElementById("farmContainer").classList.add("hidden");
+  document.getElementById("auditlogContainer").classList.add("hidden");
+  document.getElementById("lineageContainer").classList.add("hidden");
+  document.getElementById("orderContainer").classList.add("hidden");
+  document.getElementById("shipmentContainer").classList.add("hidden");
+  inventoryContainer.classList.add("hidden");
+
+  overviewContainer.classList.remove("hidden");
+  overviewContainer.innerHTML = forms.overview;
+
+  loadOverviewData().then(() => {
+    renderOverview();
+  });
+}
+
+function updateLayoutForViewMode() {
+  const rightSection = document.querySelector("main > section:last-child");
+  if (!rightSection) return;
+
+  if (viewMode === "overview") {
+    rightSection.style.display = "none";
+  } else {
+    rightSection.style.display = "";
+  }
+}
+
 function renderWarningBanner() {
   const warnings = filterByFarm(db.warnings || []);
   const pending = warnings.filter((w) => w.status === "pending" || w.status === "processing");
@@ -4264,6 +4514,18 @@ function renderDataIoPreview(result) {
 }
 
 function setTab(tab) {
+  if (viewMode === "overview") {
+    viewMode = "farm";
+    localStorage.setItem("viewMode", "farm");
+    renderViewModeSelect();
+    updateLayoutForViewMode();
+  }
+
+  const overviewContainer = document.getElementById("overviewContainer");
+  if (overviewContainer) {
+    overviewContainer.classList.add("hidden");
+  }
+
   activeTab = tab;
   tabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   if (tab === "pond") {
@@ -4508,7 +4770,9 @@ async function load() {
     currentFarmId = defaultFarm?.id || db.farms[0]?.id || null;
     localStorage.setItem("currentFarmId", currentFarmId || "");
   }
+  renderViewModeSelect();
   renderFarmSelect();
+  updateLayoutForViewMode();
 
   try {
     const enrichedCustomers = await api("/api/customers");
@@ -4526,18 +4790,27 @@ async function load() {
   } catch (e) {
   }
 
-  db.ponds = filterByFarm(db.ponds || []);
-  db.batches = filterByFarm(db.batches || []);
-  db.parentPools = filterByFarm(db.parentPools || []);
-  db.records = filterByFarm(db.records || []);
-  db.transfers = filterByFarm(db.transfers || []);
-  db.sales = filterByFarm(db.sales || []);
-  db.costItems = filterByFarm(db.costItems || []);
-  db.warnings = filterByFarm(db.warnings || []);
-  db.inventories = filterByFarm(db.inventories || []);
-  db.orders = filterByFarm(db.orders || []);
-  db.shipments = filterByFarm(db.shipments || []);
-  db.lineages = filterByFarm(db.lineages || []);
+  if (viewMode !== "overview") {
+    db.ponds = filterByFarm(db.ponds || []);
+    db.batches = filterByFarm(db.batches || []);
+    db.parentPools = filterByFarm(db.parentPools || []);
+    db.records = filterByFarm(db.records || []);
+    db.transfers = filterByFarm(db.transfers || []);
+    db.sales = filterByFarm(db.sales || []);
+    db.costItems = filterByFarm(db.costItems || []);
+    db.warnings = filterByFarm(db.warnings || []);
+    db.inventories = filterByFarm(db.inventories || []);
+    db.orders = filterByFarm(db.orders || []);
+    db.shipments = filterByFarm(db.shipments || []);
+    db.lineages = filterByFarm(db.lineages || []);
+  }
+
+  if (viewMode === "overview") {
+    fillSelects();
+    renderWarningBanner();
+    showOverviewTab();
+    return;
+  }
 
   fillSelects();
   renderWarningBanner();

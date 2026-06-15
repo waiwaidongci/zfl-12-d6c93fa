@@ -14,6 +14,13 @@
       </div>
       <div class="header-right">
         <div class="farm-selector">
+          <label class="meta" for="viewModeSelect">视图：</label>
+          <select id="viewModeSelect">
+            <option value="farm">单场区</option>
+            <option value="overview">经营总览</option>
+          </select>
+        </div>
+        <div class="farm-selector" id="farmSelectorWrap">
           <label class="meta" for="farmSelect">当前场区：</label>
           <select id="farmSelect"></select>
         </div>
@@ -50,6 +57,7 @@
         <div id="dataioContainer" class="hidden"></div>
         <div id="auditlogContainer" class="hidden"></div>
         <div id="lineageContainer" class="hidden"></div>
+        <div id="overviewContainer" class="hidden"></div>
       </section>
       <section>
         <div id="warningBanner" class="hidden"></div>
