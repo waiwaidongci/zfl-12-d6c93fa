@@ -202,11 +202,12 @@ export function createShipmentsRouter(helpers) {
       }
 
       const availableQty = getBatchAvailableQuantity(batch, db);
-      if (shipmentQty > availableQty) {
+      const effectiveAvailable = availableQty + orderRemaining;
+      if (shipmentQty > effectiveAvailable) {
         return sendJson(res, 400, {
           error: "insufficient_stock",
-          message: `批次可售数量不足，当前可售 ${availableQty} 尾`,
-          available: availableQty,
+          message: `批次可售数量不足，含当前订单占用可用 ${effectiveAvailable} 尾`,
+          available: effectiveAvailable,
         });
       }
 

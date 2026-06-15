@@ -2338,8 +2338,10 @@ function openShipmentModal(shipmentId = null, prefillOrderId = null) {
         </div>
         <div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>
       `;
-      availableInfo.innerHTML = `最多可发 ${Math.min(order.remainingQuantity, availableRes.availableQuantity).toLocaleString()} 尾（订单剩余 ${order.remainingQuantity.toLocaleString()} 尾，批次可售 ${availableRes.availableQuantity.toLocaleString()} 尾）`;
-      quantityInput.max = Math.min(order.remainingQuantity, availableRes.availableQuantity);
+      const effectiveAvailable = availableRes.availableQuantity + order.remainingQuantity;
+      const maxShip = Math.min(order.remainingQuantity, effectiveAvailable);
+      availableInfo.innerHTML = `最多可发 ${maxShip.toLocaleString()} 尾（订单剩余 ${order.remainingQuantity.toLocaleString()} 尾，含当前订单占用可发 ${effectiveAvailable.toLocaleString()} 尾）`;
+      quantityInput.max = maxShip;
     } catch (err) {
       orderInfo.innerHTML = `<span class="warning">${err.message}</span>`;
     }

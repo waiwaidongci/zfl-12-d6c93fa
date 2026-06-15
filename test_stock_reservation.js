@@ -454,6 +454,46 @@ async function test() {
       passed++;
     }
 
+    console.log("\n13. 测试满额占用订单发货（修复验证）");
+    {
+      const initialAvailable = (await api(`/api/batches/${TEST_BATCH}/available`)).data.availableQuantity;
+      const fullOrderQty = initialAvailable;
+
+      const { data: fullOrder } = await api("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          batchId: TEST_BATCH,
+          customerName: "满额占用客户",
+          orderQuantity: fullOrderQty,
+          unitPrice: 0.05,
+          deliveryDate: farDate,
+        }),
+      });
+      assertEqual(fullOrder.status, "pending", "满额订单创建成功");
+      const fullOrderId = fullOrder.id;
+
+      const afterOrderData = (await api(`/api/batches/${TEST_BATCH}/available`)).data;
+      assertEqual(afterOrderData.availableQuantity, 0, "满额订单占用后可售为0");
+      assertEqual(afterOrderData.reservedQuantity - fullOrderQty >= 0, true, "占用包含满额订单");
+
+      const { res: shipRes, data: shipData } = await api("/api/shipments", {
+        method: "POST",
+        body: JSON.stringify({
+          orderId: fullOrderId,
+          date: getDateString(0),
+          quantity: fullOrderQty,
+        }),
+      });
+      assertEqual(shipRes.status, 201, `满额占用订单发货成功（原可售为0，发 ${fullOrderQty} 尾）`);
+
+      const afterShipData = (await api(`/api/batches/${TEST_BATCH}/available`)).data;
+      const finishedOrder = (await api(`/api/orders/${fullOrderId}`)).data;
+      assertEqual(finishedOrder.status, "completed", "订单状态变为已完成");
+      assertEqual(finishedOrder.remainingQuantity, 0, "订单剩余为0");
+      console.log(`      满额占用 ${fullOrderQty} 尾订单，在可售为0时仍可成功发货`);
+      passed++;
+    }
+
     console.log("\n=== 测试完成 ===");
     console.log(`通过: ${passed} / ${passed + failed}`);
     console.log(`失败: ${failed}`);
