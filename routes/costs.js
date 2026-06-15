@@ -1,5 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
-const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
+import { getAllCostCategoriesForFarm, getFarmCostCategories, getDefaultCostCategories } from "./farms.js";
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -20,7 +20,7 @@ function getFarmIdFromQuery(req) {
   return url.searchParams.get("farmId");
 }
 
-function validateCostItem(input, db, isEdit = false) {
+function validateCostItem(input, db, isEdit = false, existing = null) {
   const errors = [];
 
   if (!input.batchId || !input.batchId.trim()) {
@@ -31,8 +31,12 @@ function validateCostItem(input, db, isEdit = false) {
 
   if (!input.category || !input.category.trim()) {
     errors.push("费用类别不能为空");
-  } else if (!COST_CATEGORIES.includes(input.category.trim())) {
-    errors.push("费用类别必须是：饲料、药品、人工、能源、其他");
+  } else {
+    const farmId = existing?.farmId || getFarmIdForBatch(db, input.batchId.trim());
+    const validCategories = getAllCostCategoriesForFarm(db, farmId);
+    if (!validCategories.includes(input.category.trim())) {
+      errors.push("费用类别必须是：" + validCategories.join("、"));
+    }
   }
 
   if (!input.date || !input.date.trim()) {
@@ -59,6 +63,17 @@ export function createCostsRouter(helpers) {
 
   return async function costsRouter(req, res, pathname, method) {
     const idMatch = pathname.match(/^\/api\/costs\/([^/]+)$/);
+
+    if (method === "GET" && pathname === "/api/costs/categories") {
+      const db = await loadDb();
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const farmId = url.searchParams.get("farmId") || getDefaultFarmId(db);
+      return sendJson(res, 200, {
+        costCategories: getFarmCostCategories(db, farmId),
+        allCategories: getAllCostCategoriesForFarm(db, farmId),
+        legacyCategories: getDefaultCostCategories(),
+      });
+    }
 
     if (method === "GET" && pathname === "/api/costs") {
       const db = await loadDb();
@@ -142,7 +157,7 @@ export function createCostsRouter(helpers) {
         return sendJson(res, 404, { error: "成本项目不存在" });
       }
 
-      const errors = validateCostItem(input, db, true);
+      const errors = validateCostItem(input, db, true, existing);
       if (errors.length > 0) {
         return sendJson(res, 400, { error: errors.join("；") });
       }

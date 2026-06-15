@@ -6,7 +6,35 @@ const POND_STATUS = {
 };
 
 const POND_PURPOSES = ["虾苗培育", "蟹苗培育", "贝苗培育", "鱼种培育", "暂养池", "其他"];
-const COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
+const LEGACY_COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
+
+function getFarmCostCategories(farmId) {
+  const farm = (db.farms || []).find((f) => f.id === farmId);
+  if (farm && Array.isArray(farm.costCategories) && farm.costCategories.length > 0) {
+    return [...farm.costCategories];
+  }
+  return [...LEGACY_COST_CATEGORIES];
+}
+
+function getCurrentFarmCostCategories() {
+  const farmId = getEffectiveFarmId();
+  return getFarmCostCategories(farmId);
+}
+
+function getAllCostCategories(farmId) {
+  const farmCats = getFarmCostCategories(farmId);
+  const merged = [...new Set([...LEGACY_COST_CATEGORIES, ...farmCats])];
+  return merged;
+}
+
+function getCostCategoriesForBatch(batchId) {
+  const batch = (db.batches || []).find((b) => b.id === batchId);
+  const farmId = batch?.farmId || getEffectiveFarmId();
+  return {
+    categories: getFarmCostCategories(farmId),
+    allCategories: getAllCostCategories(farmId),
+  };
+}
 
 const WARNING_LEVELS = {
   red: { label: "红色预警", class: "warning-red" },
@@ -170,7 +198,8 @@ async function renderTrace() {
   const s = trace.summary;
   const profitClass = s.grossProfit >= 0 ? "" : "warning";
 
-  const costBreakdown = COST_CATEGORIES.map(
+  const costCategories = s.costCategories || LEGACY_COST_CATEGORIES;
+  const costBreakdown = costCategories.map(
     (cat) => `<div class="row"><span class="label">${cat}</span><span>${(s.costByCategory?.[cat] || 0).toFixed(2)} 元</span></div>`
   ).join("");
 
@@ -1198,8 +1227,11 @@ function renderCostStats() {
     filtered = costItems.filter((c) => c.batchId === batchFilter);
   }
 
+  const categories = getCurrentFarmCostCategories();
+  const allCategories = getAllCostCategories(getEffectiveFarmId());
+
   const byCategory = {};
-  COST_CATEGORIES.forEach((cat) => {
+  allCategories.forEach((cat) => {
     byCategory[cat] = filtered
       .filter((c) => c.category === cat)
       .reduce((sum, c) => sum + Number(c.amount || 0), 0);
@@ -1210,7 +1242,7 @@ function renderCostStats() {
     ["成本项目数", filtered.length + " 项"],
     ["总成本", total.toFixed(2) + " 元"],
   ];
-  COST_CATEGORIES.forEach((cat) => {
+  categories.forEach((cat) => {
     stats.push([cat, byCategory[cat].toFixed(2) + " 元"]);
   });
 
@@ -1294,6 +1326,9 @@ function openCostModal(costId = null, prefillBatchId = null) {
   const costItems = db.costItems || [];
   const cost = costId ? costItems.find((c) => c.id === costId) : null;
   const isEdit = !!cost;
+  const initialBatchId = cost?.batchId || prefillBatchId || (filterByFarm(db.batches || [])[0]?.id);
+  const initialCategories = getCostCategoriesForBatch(initialBatchId);
+
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
@@ -1301,19 +1336,19 @@ function openCostModal(costId = null, prefillBatchId = null) {
       <h2>${isEdit ? "编辑成本项目" : "新增成本项目"}</h2>
       <form id="costForm">
         <label>批次</label>
-        <select name="batchId" required>
-          ${db.batches
+        <select name="batchId" id="costModalBatchSelect" required>
+          ${filterByFarm(db.batches || [])
             .map(
               (b) =>
                 `<option value="${b.id}" ${
-                  (cost?.batchId || prefillBatchId) === b.id ? "selected" : ""
+                  initialBatchId === b.id ? "selected" : ""
                 }>${b.id} · ${b.species}</option>`
             )
             .join("")}
         </select>
         <label>费用类别</label>
-        <select name="category" required>
-          ${COST_CATEGORIES.map(
+        <select name="category" id="costModalCategorySelect" required>
+          ${initialCategories.categories.map(
             (c) => `<option value="${c}" ${cost?.category === c ? "selected" : ""}>${c}</option>`
           ).join("")}
         </select>
@@ -1335,6 +1370,26 @@ function openCostModal(costId = null, prefillBatchId = null) {
     </div>
   `;
   document.body.appendChild(modal);
+
+  const batchSelect = modal.querySelector("#costModalBatchSelect");
+  const categorySelect = modal.querySelector("#costModalCategorySelect");
+  const currentCategory = cost?.category;
+
+  function updateCategoryOptions() {
+    const selectedBatchId = batchSelect.value;
+    const cats = getCostCategoriesForBatch(selectedBatchId);
+    categorySelect.innerHTML = cats.categories.map(
+      (c) => `<option value="${c}" ${currentCategory === c ? "selected" : ""}>${c}</option>`
+    ).join("");
+    if (!cats.categories.includes(currentCategory) && LEGACY_COST_CATEGORIES.includes(currentCategory)) {
+      const legacyOpt = document.createElement("option");
+      legacyOpt.value = currentCategory;
+      legacyOpt.textContent = currentCategory + " (兼容)";
+      legacyOpt.selected = true;
+      categorySelect.appendChild(legacyOpt);
+    }
+  }
+  batchSelect.onchange = updateCategoryOptions;
 
   modal.querySelector("#cancelBtn").onclick = () => modal.remove();
   modal.onclick = (e) => {
@@ -2341,9 +2396,15 @@ function renderFarmList() {
           ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${f.note}</div>`
           : ""
       }
+      ${
+        Array.isArray(f.costCategories) && f.costCategories.length > 0
+          ? `<div class="farm-cost-cats"><span class="label">成本分类：</span><span class="farm-cost-tags">${f.costCategories.map(c => `<span class="category-tag">${c}</span>`).join("")}</span></div>`
+          : ""
+      }
       <div class="farm-actions">
         ${f.id !== currentFarmId ? `<button type="button" data-action="switch">切换到此</button>` : ""}
         ${!f.isDefault ? `<button type="button" class="secondary" data-action="default">设为默认</button>` : ""}
+        <button type="button" class="secondary" data-action="categories">成本分类</button>
         <button type="button" class="secondary" data-action="edit">编辑</button>
         ${!f.isDefault ? `<button type="button" class="danger" data-action="delete">删除</button>` : ""}
       </div>
@@ -2366,6 +2427,8 @@ function renderFarmList() {
           openFarmModal(id);
         } else if (action === "delete") {
           deleteFarm(id);
+        } else if (action === "categories") {
+          openCostCategoriesModal(id);
         }
       };
     });
@@ -2429,6 +2492,156 @@ function openFarmModal(farmId = null) {
         if (!farms.length) data.isDefault = true;
         await api("/api/farms", { method: "POST", body: JSON.stringify(data) });
       }
+      modal.remove();
+      await load();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+}
+
+function openCostCategoriesModal(farmId) {
+  const farms = db.farms || [];
+  const farm = farms.find((f) => f.id === farmId);
+  if (!farm) return;
+  const categories = [...getFarmCostCategories(farmId)];
+  const legacyCats = [...LEGACY_COST_CATEGORIES];
+  const usedInCosts = new Set(
+    (db.costItems || [])
+      .filter((c) => c.farmId === farmId)
+      .map((c) => c.category)
+      .filter(Boolean)
+  );
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal cost-categories-modal">
+      <h2>成本分类管理 — ${farm.name}</h2>
+      <div class="cost-categories-info">
+        <p class="meta">添加、编辑或删除本场区的成本分类。已被历史成本使用的分类无法删除。</p>
+        <p class="meta" style="margin-top:4px;"><strong>兼容模式：</strong>系统分类（饲料、药品、人工、能源、其他）始终可用，不会在此处显示删除按钮。</p>
+      </div>
+      <div id="costCategoriesList" class="cost-categories-list"></div>
+      <div class="cost-categories-add-row">
+        <input type="text" id="newCategoryInput" placeholder="输入新分类名称，如：鱼苗、设备、运输...">
+        <button type="button" id="addCategoryBtn" class="secondary">+ 添加</button>
+      </div>
+      <div class="cost-categories-preview">
+        <div class="label" style="margin-bottom:6px;">当前完整分类（含系统兼容）：</div>
+        <div id="fullCategoriesPreview" class="farm-cost-tags"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="cancelBtn">取消</button>
+        <button type="button" id="saveBtn">保存分类</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const listEl = modal.querySelector("#costCategoriesList");
+  const previewEl = modal.querySelector("#fullCategoriesPreview");
+  const newInput = modal.querySelector("#newCategoryInput");
+  const addBtn = modal.querySelector("#addCategoryBtn");
+
+  function renderList() {
+    listEl.innerHTML = categories.map((cat, idx) => {
+      const isLegacy = legacyCats.includes(cat);
+      const isUsed = usedInCosts.has(cat);
+      const canDelete = !isLegacy && !isUsed;
+      return `
+        <div class="cost-category-row" data-idx="${idx}">
+          <span class="category-sort">${idx + 1}</span>
+          <input type="text" class="category-name-input" value="${cat}" data-idx="${idx}" placeholder="分类名称">
+          ${isLegacy ? '<span class="category-badge category-system">系统</span>' : ""}
+          ${isUsed && !isLegacy ? '<span class="category-badge category-used">已使用</span>' : ""}
+          <span class="category-actions">
+            <button type="button" class="tiny secondary category-up" data-idx="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="tiny secondary category-down" data-idx="${idx}" ${idx === categories.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" class="tiny danger category-del" data-idx="${idx}" ${canDelete ? "" : "disabled"}>删除</button>
+          </span>
+        </div>
+      `;
+    }).join("");
+
+    listEl.querySelectorAll(".category-name-input").forEach((inp) => {
+      inp.onchange = (e) => {
+        const idx = Number(e.target.dataset.idx);
+        const val = e.target.value.trim();
+        if (!val) { e.target.value = categories[idx]; return; }
+        categories[idx] = val;
+        renderList();
+        renderPreview();
+      };
+    });
+    listEl.querySelectorAll(".category-up").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = (e) => {
+        const idx = Number(e.target.dataset.idx);
+        [categories[idx - 1], categories[idx]] = [categories[idx], categories[idx - 1]];
+        renderList();
+      };
+    });
+    listEl.querySelectorAll(".category-down").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = (e) => {
+        const idx = Number(e.target.dataset.idx);
+        [categories[idx + 1], categories[idx]] = [categories[idx], categories[idx + 1]];
+        renderList();
+      };
+    });
+    listEl.querySelectorAll(".category-del").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = (e) => {
+        const idx = Number(e.target.dataset.idx);
+        categories.splice(idx, 1);
+        renderList();
+        renderPreview();
+      };
+    });
+  }
+
+  function renderPreview() {
+    const merged = [...new Set([...legacyCats, ...categories])];
+    previewEl.innerHTML = merged.map((c) => {
+      const isLegacy = legacyCats.includes(c) && !categories.includes(c);
+      return `<span class="category-tag ${isLegacy ? 'category-tag-legacy' : ''}">${c}${isLegacy ? ' (系统)' : ''}</span>`;
+    }).join("");
+  }
+
+  function addCategory() {
+    const val = newInput.value.trim();
+    if (!val) return;
+    const all = [...new Set([...legacyCats, ...categories])];
+    if (all.includes(val)) {
+      alert("该分类已存在");
+      return;
+    }
+    categories.push(val);
+    newInput.value = "";
+    renderList();
+    renderPreview();
+  }
+
+  addBtn.onclick = addCategory;
+  newInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } };
+
+  renderList();
+  renderPreview();
+
+  modal.querySelector("#cancelBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.querySelector("#saveBtn").onclick = async () => {
+    try {
+      const cleaned = categories.map((c) => c.trim()).filter(Boolean);
+      if (cleaned.length === 0) {
+        alert("至少需要保留一个分类");
+        return;
+      }
+      await api("/api/farms/" + farmId + "/cost-categories", {
+        method: "PUT",
+        body: JSON.stringify({ costCategories: [...new Set(cleaned)] }),
+      });
       modal.remove();
       await load();
     } catch (err) {
@@ -2575,6 +2788,7 @@ const ACTION_LABELS_MAP = {
   farm_update: "修改场区",
   farm_delete: "删除场区",
   farm_set_default: "设置默认场区",
+  farm_cost_categories_update: "更新成本分类",
   rollback: "撤销操作",
   lineage_create: "新增血缘",
   lineage_delete: "删除血缘",

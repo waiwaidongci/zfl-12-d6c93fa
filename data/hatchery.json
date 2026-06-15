@@ -41,6 +41,17 @@
       "status": "育苗中",
       "cost": 0,
       "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "B-LAOSHAN-01",
+      "species": "大菱鲆",
+      "parentPoolId": "PP-01",
+      "hatchDate": "2026-06-10",
+      "currentPool": "P-06",
+      "estimatedCount": 50000,
+      "status": "育苗中",
+      "cost": 5000,
+      "farmId": "FARM-001"
     }
   ],
   "ponds": [
@@ -216,6 +227,16 @@
       "reason": "测试数据迁移",
       "farmId": "FARM-DEFAULT",
       "lineageId": "LIN-MIG-TR-1781452032398"
+    },
+    {
+      "id": "TR-1781491032103",
+      "batchId": "B-LAOSHAN-01",
+      "fromPool": "孵化桶",
+      "toPool": "P-06",
+      "date": "2026-06-10",
+      "count": 50000,
+      "reason": "新批次入池",
+      "farmId": "FARM-001"
     }
   ],
   "sales": [],
@@ -283,6 +304,28 @@
       "amount": 3000,
       "description": "测试UI回滚",
       "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "COST-1781491032116",
+      "batchId": "B-LAOSHAN-01",
+      "category": "鱼苗",
+      "date": "2026-06-11",
+      "amount": 8500,
+      "quantity": 50000,
+      "unit": "尾",
+      "description": "大菱鲆鱼苗采购",
+      "farmId": "FARM-001"
+    },
+    {
+      "id": "COST-1781491032127",
+      "batchId": "B-LAOSHAN-01",
+      "category": "饲料",
+      "date": "2026-06-12",
+      "amount": 1200,
+      "quantity": 300,
+      "unit": "kg",
+      "description": "配合饲料",
+      "farmId": "FARM-001"
     }
   ],
   "customers": [
@@ -356,7 +399,14 @@
       "location": "",
       "note": "系统自动创建的默认场区，包含所有迁移的历史数据",
       "isDefault": true,
-      "createdAt": "2026-06-14T12:20:31.127Z"
+      "createdAt": "2026-06-14T12:20:31.127Z",
+      "costCategories": [
+        "饲料",
+        "药品",
+        "人工",
+        "能源",
+        "其他"
+      ]
     },
     {
       "id": "FARM-001",
@@ -364,7 +414,15 @@
       "location": "山东青岛崂山",
       "note": "第二生产基地",
       "isDefault": false,
-      "createdAt": "2026-06-14T12:20:48.131Z"
+      "createdAt": "2026-06-14T12:20:48.131Z",
+      "costCategories": [
+        "饲料",
+        "药品",
+        "人工",
+        "能源",
+        "其他",
+        "鱼苗"
+      ]
     }
   ],
   "opLogs": [
@@ -621,6 +679,107 @@
       },
       "rolledBack": false,
       "createdAt": "2026-06-14T15:47:12.398Z"
+    },
+    {
+      "id": "LOG-1781490814402-8136",
+      "operator": "系统",
+      "action": "farm_cost_categories_update",
+      "targetType": "farm",
+      "targetId": "FARM-001",
+      "before": {
+        "costCategories": [
+          "饲料",
+          "药品",
+          "人工",
+          "能源",
+          "其他"
+        ]
+      },
+      "after": {
+        "costCategories": [
+          "饲料",
+          "药品",
+          "人工",
+          "能源",
+          "其他",
+          "鱼苗"
+        ]
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T02:33:34.402Z"
+    },
+    {
+      "id": "LOG-1781491032103-r57r",
+      "operator": "系统",
+      "action": "batch_create",
+      "targetType": "batch",
+      "targetId": "B-LAOSHAN-01",
+      "before": null,
+      "after": {
+        "id": "B-LAOSHAN-01",
+        "species": "大菱鲆",
+        "parentPoolId": "PP-01",
+        "hatchDate": "2026-06-10",
+        "currentPool": "P-06",
+        "estimatedCount": 50000,
+        "status": "育苗中",
+        "cost": 5000,
+        "farmId": "FARM-001"
+      },
+      "farmId": "FARM-001",
+      "meta": {
+        "transferId": "TR-1781491032103"
+      },
+      "rolledBack": false,
+      "createdAt": "2026-06-15T02:37:12.103Z"
+    },
+    {
+      "id": "LOG-1781491032117-02oi",
+      "operator": "系统",
+      "action": "cost_create",
+      "targetType": "cost",
+      "targetId": "COST-1781491032116",
+      "before": null,
+      "after": {
+        "id": "COST-1781491032116",
+        "batchId": "B-LAOSHAN-01",
+        "category": "鱼苗",
+        "date": "2026-06-11",
+        "amount": 8500,
+        "quantity": 50000,
+        "unit": "尾",
+        "description": "大菱鲆鱼苗采购",
+        "farmId": "FARM-001"
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T02:37:12.117Z"
+    },
+    {
+      "id": "LOG-1781491032127-wure",
+      "operator": "系统",
+      "action": "cost_create",
+      "targetType": "cost",
+      "targetId": "COST-1781491032127",
+      "before": null,
+      "after": {
+        "id": "COST-1781491032127",
+        "batchId": "B-LAOSHAN-01",
+        "category": "饲料",
+        "date": "2026-06-12",
+        "amount": 1200,
+        "quantity": 300,
+        "unit": "kg",
+        "description": "配合饲料",
+        "farmId": "FARM-001"
+      },
+      "farmId": "FARM-001",
+      "meta": null,
+      "rolledBack": false,
+      "createdAt": "2026-06-15T02:37:12.127Z"
     }
   ],
   "lineages": [

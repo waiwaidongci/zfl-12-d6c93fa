@@ -1,6 +1,7 @@
 import { enrichOrder } from "./orders.js";
 import { enrichShipment, getBatchAvailableQuantity } from "./shipments.js";
 import { writeLog } from "../utils/audit-log.js";
+import { getAllCostCategoriesForFarm, getDefaultCostCategories } from "./farms.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -28,16 +29,22 @@ function avg(items, key) {
   return Number((sum(items, key) / items.length).toFixed(2));
 }
 
-function calcCostSummary(costItems) {
-  const categories = ["饲料", "药品", "人工", "能源", "其他"];
+function calcCostSummary(costItems, db, farmId) {
+  const categories = getAllCostCategoriesForFarm(db, farmId);
   const byCategory = {};
   categories.forEach((cat) => {
     byCategory[cat] = costItems
       .filter((c) => c.category === cat)
       .reduce((total, c) => total + Number(c.amount || 0), 0);
   });
+  const legacyCategories = getDefaultCostCategories();
+  legacyCategories.forEach((cat) => {
+    if (!(cat in byCategory)) {
+      byCategory[cat] = 0;
+    }
+  });
   const total = Object.values(byCategory).reduce((a, b) => a + b, 0);
-  return { byCategory, total };
+  return { byCategory, total, categories };
 }
 
 export function batchTrace(db, batchId) {
@@ -76,7 +83,8 @@ export function batchTrace(db, batchId) {
   ).sort((a, b) => a.date.localeCompare(b.date));
 
   const initialCost = Number(batch.cost || 0);
-  const costSummary = calcCostSummary(costItems);
+  const farmId = batch.farmId || getDefaultFarmId(db);
+  const costSummary = calcCostSummary(costItems, db, farmId);
   const totalCost = initialCost + costSummary.total;
   const estimatedCount = Number(batch.estimatedCount || 0);
   const unitCost = estimatedCount > 0 ? Number((totalCost / estimatedCount).toFixed(6)) : 0;
@@ -145,6 +153,7 @@ export function batchTrace(db, batchId) {
       averageMortality: avg(records, "mortality"),
       initialCost,
       costByCategory: costSummary.byCategory,
+      costCategories: costSummary.categories,
       costItemsTotal: costSummary.total,
       totalCost,
       estimatedCount,

@@ -16,7 +16,7 @@ import { createInventoriesRouter } from "./routes/inventories.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { createShipmentsRouter } from "./routes/shipments.js";
 import { createDataIoRouter } from "./routes/data-io.js";
-import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm } from "./routes/farms.js";
+import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm, migrateFarmCostCategories } from "./routes/farms.js";
 import { createAuditLogRouter } from "./routes/audit-log.js";
 import { createLineageRouter, migrateTransfersToLineage } from "./routes/lineage.js";
 
@@ -70,6 +70,12 @@ async function loadDb() {
   if (!db.farms || db.farms.length === 0) {
     ensureDefaultFarm(db);
     migrateDataToFarm(db, db.farms[0]);
+    dbNeedsSave = true;
+  }
+
+  const migratedCostCategories = migrateFarmCostCategories(db);
+  if (migratedCostCategories > 0) {
+    console.log(`迁移了 ${migratedCostCategories} 个场区的成本分类`);
     dbNeedsSave = true;
   }
 

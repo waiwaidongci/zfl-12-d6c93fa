@@ -1,6 +1,11 @@
 import { writeLog } from "../utils/audit-log.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
+const DEFAULT_COST_CATEGORIES = ["饲料", "药品", "人工", "能源", "其他"];
+
+function getDefaultCostCategories() {
+  return [...DEFAULT_COST_CATEGORIES];
+}
 
 function validateFarm(input, isUpdate = false) {
   const errors = [];
@@ -31,7 +36,20 @@ function sanitizeFarm(input, existing = null) {
     note: "",
     isDefault: false,
     createdAt: "",
+    costCategories: getDefaultCostCategories(),
   };
+
+  let costCategories = base.costCategories || getDefaultCostCategories();
+  if (input.costCategories !== undefined) {
+    if (Array.isArray(input.costCategories)) {
+      const cleaned = input.costCategories
+        .map((c) => (typeof c === "string" ? c.trim() : ""))
+        .filter((c) => c.length > 0);
+      if (cleaned.length > 0) {
+        costCategories = [...new Set(cleaned)];
+      }
+    }
+  }
 
   return {
     id: input.id !== undefined ? input.id.trim() : base.id,
@@ -43,6 +61,7 @@ function sanitizeFarm(input, existing = null) {
     note: input.note !== undefined ? (input.note || "").trim() : base.note,
     isDefault: input.isDefault !== undefined ? Boolean(input.isDefault) : base.isDefault,
     createdAt: base.createdAt || new Date().toISOString(),
+    costCategories,
   };
 }
 
@@ -64,12 +83,40 @@ function ensureDefaultFarm(db) {
       note: "系统自动创建的默认场区，包含所有迁移的历史数据",
       isDefault: true,
       createdAt: new Date().toISOString(),
+      costCategories: getDefaultCostCategories(),
     });
   }
   if (!db.farms.some((f) => f.isDefault)) {
     db.farms[0].isDefault = true;
   }
   return getDefaultFarm(db.farms);
+}
+
+function migrateFarmCostCategories(db) {
+  if (!Array.isArray(db.farms)) return 0;
+  let migrated = 0;
+  for (const farm of db.farms) {
+    if (!Array.isArray(farm.costCategories) || farm.costCategories.length === 0) {
+      farm.costCategories = getDefaultCostCategories();
+      migrated++;
+    }
+  }
+  return migrated;
+}
+
+function getFarmCostCategories(db, farmId) {
+  const farm = (db.farms || []).find((f) => f.id === farmId);
+  if (farm && Array.isArray(farm.costCategories) && farm.costCategories.length > 0) {
+    return [...farm.costCategories];
+  }
+  return getDefaultCostCategories();
+}
+
+function getAllCostCategoriesForFarm(db, farmId) {
+  const farmCats = getFarmCostCategories(db, farmId);
+  const legacyCats = getDefaultCostCategories();
+  const merged = [...new Set([...legacyCats, ...farmCats])];
+  return merged;
 }
 
 function migrateDataToFarm(db, defaultFarm) {
@@ -284,15 +331,70 @@ export function createFarmsRouter(helpers) {
       return sendJson(res, 200, farm);
     }
 
+    const costCategoriesMatch = pathname.match(/^\/api\/farms\/([^/]+)\/cost-categories$/);
+    if (costCategoriesMatch) {
+      const farmId = decodeURIComponent(costCategoriesMatch[1]);
+      const db = await loadDb();
+      const farms = db.farms || [];
+      const farmIndex = farms.findIndex((f) => f.id === farmId);
+      if (farmIndex === -1) {
+        return sendJson(res, 404, { error: "场区不存在" });
+      }
+
+      if (method === "GET") {
+        return sendJson(res, 200, {
+          costCategories: getFarmCostCategories(db, farmId),
+          allCategories: getAllCostCategoriesForFarm(db, farmId),
+        });
+      }
+
+      if (method === "PUT") {
+        const input = await body(req);
+        const categories = input.costCategories;
+        if (!Array.isArray(categories)) {
+          return sendJson(res, 400, { error: "costCategories 必须是数组" });
+        }
+        const cleaned = categories
+          .map((c) => (typeof c === "string" ? c.trim() : ""))
+          .filter((c) => c.length > 0);
+        if (cleaned.length === 0) {
+          return sendJson(res, 400, { error: "至少需要保留一个成本分类" });
+        }
+        const uniqueCats = [...new Set(cleaned)];
+        const beforeFarm = JSON.parse(JSON.stringify(farms[farmIndex]));
+        farms[farmIndex].costCategories = uniqueCats;
+        db.farms = farms;
+        writeLog(db, {
+          operator: input.operator || "",
+          action: "farm_cost_categories_update",
+          targetType: "farm",
+          targetId: farmId,
+          before: { costCategories: beforeFarm.costCategories },
+          after: { costCategories: uniqueCats },
+          farmId: farmId,
+        });
+        await saveDb(db);
+        return sendJson(res, 200, {
+          costCategories: uniqueCats,
+          allCategories: getAllCostCategoriesForFarm(db, farmId),
+        });
+      }
+    }
+
     return false;
   };
 }
 
 export {
   DEFAULT_FARM_ID,
+  DEFAULT_COST_CATEGORIES,
   validateFarm,
   sanitizeFarm,
   getDefaultFarm,
   ensureDefaultFarm,
   migrateDataToFarm,
+  migrateFarmCostCategories,
+  getFarmCostCategories,
+  getAllCostCategoriesForFarm,
+  getDefaultCostCategories,
 };
