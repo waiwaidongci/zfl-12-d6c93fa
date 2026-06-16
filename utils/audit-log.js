@@ -70,15 +70,42 @@ export function writeLogToTxn(txn, db, { action, targetType, targetId, before, a
     txnId: txn.txnId,
   });
   txn.logs.push(logEntry);
-  if (farmId) txn.farmIds.add(farmId);
-  else if (txn.farmId) txn.farmIds.add(txn.farmId);
+
+  function addFarmId(fid) {
+    if (fid) txn.farmIds.add(fid);
+  }
+  function addBatchId(bid) {
+    if (bid) txn.batchIds.add(bid);
+  }
+  function collectFromItem(item) {
+    if (!item || typeof item !== "object") return;
+    if (item.farmId) addFarmId(item.farmId);
+    if (item.batchId) addBatchId(item.batchId);
+  }
+
+  addFarmId(farmId);
+  addFarmId(txn.farmId);
+
   const key = targetType;
   if (!txn.collections.has(key)) txn.collections.set(key, 0);
-  txn.collections.set(key, txn.collections.get(key) + 1);
-  if (meta && meta.batchId) txn.batchIds.add(meta.batchId);
-  if (before && before.batchId) txn.batchIds.add(before.batchId);
-  if (after && after.batchId) txn.batchIds.add(after.batchId);
-  if (targetType === "batch" && targetId) txn.batchIds.add(targetId);
+
+  let affectedCount = 1;
+  if (Array.isArray(after)) affectedCount = after.length;
+  else if (Array.isArray(before)) affectedCount = before.length;
+  else if (meta && typeof meta.count === "number") affectedCount = meta.count;
+  txn.collections.set(key, txn.collections.get(key) + affectedCount);
+
+  if (meta && meta.batchId) addBatchId(meta.batchId);
+
+  const beforeArr = Array.isArray(before) ? before : (before ? [before] : []);
+  for (const item of beforeArr) collectFromItem(item);
+
+  const afterArr = Array.isArray(after) ? after : (after ? [after] : []);
+  for (const item of afterArr) collectFromItem(item);
+
+  if (targetType === "batch" && targetId) {
+    String(targetId).split(",").map((s) => s.trim()).filter(Boolean).forEach(addBatchId);
+  }
   return logEntry;
 }
 

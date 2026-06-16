@@ -4,12 +4,15 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getInitialSeed } from "./seed/seed.js";
+import { beginTxn, writeLogToTxn, commitTxn, canRollbackTxn } from "./utils/audit-log.js";
 import { createAuditLogRouter } from "./routes/audit-log.js";
 import { createLineageRouter } from "./routes/lineage.js";
 import { createInventoriesRouter } from "./routes/inventories.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { createShipmentsRouter } from "./routes/shipments.js";
 import { createBatchesRouter } from "./routes/batches.js";
+import { createDataIoRouter } from "./routes/data-io.js";
+import { createRecordsRouter } from "./routes/records.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_PORT = 3098;
@@ -66,6 +69,8 @@ function createTestServer() {
   const ordersRouter = createOrdersRouter(helpers);
   const shipmentsRouter = createShipmentsRouter(helpers);
   const batchesRouter = createBatchesRouter(helpers);
+  const dataIoRouter = createDataIoRouter(helpers);
+  const recordsRouter = createRecordsRouter(helpers);
 
   async function routeApi(req, res, url, method) {
     const pathname = url.pathname;
@@ -92,6 +97,12 @@ function createTestServer() {
 
     const result6 = await batchesRouter(req, res, pathname, method);
     if (result6 !== false) return result6;
+
+    const result7 = await dataIoRouter(req, res, pathname, method);
+    if (result7 !== false) return result7;
+
+    const result8 = await recordsRouter(req, res, pathname, method);
+    if (result8 !== false) return result8;
 
     return false;
   }
@@ -512,6 +523,95 @@ async function test() {
     console.log("7.2 验证事务整体被回滚");
     const txn2AfterRollback = await api("/api/audit-transactions/" + encodeURIComponent(inv2TxnId));
     assert(txn2AfterRollback.data.rollbackable === false, "回滚后事务不可再次回滚");
+    passed++;
+
+    console.log("\n【测试 8】跨场区事务回滚门禁\n");
+
+    console.log("8.1 手动创建一个跨场区事务（包含两个场区的记录）");
+    const db8 = await loadDb();
+    const crossFarmTxn = beginTxn(db8, {
+      operator: "测试员",
+      farmId: "FARM-DEFAULT",
+      description: "跨场区测试事务",
+    });
+    writeLogToTxn(crossFarmTxn, db8, {
+      action: "record_create",
+      targetType: "record",
+      targetId: "REC-CROSS-1",
+      before: null,
+      after: [
+        { id: "REC-CROSS-1", batchId: firstBatch.id, farmId: "FARM-DEFAULT", date: "2026-08-21" },
+        { id: "REC-CROSS-2", batchId: firstBatch.id, farmId: "FARM-OTHER", date: "2026-08-22" },
+      ],
+      meta: null,
+    });
+    commitTxn(db8, crossFarmTxn);
+    await saveDb(db8);
+    passed++;
+
+    console.log("8.2 验证事务标记为跨场区且不可回滚");
+    const crossFarmCheck = canRollbackTxn(db8, crossFarmTxn.txnId);
+    assert(crossFarmCheck.ok === false, "跨场区事务不可回滚");
+    assert(crossFarmCheck.reason.includes("跨场区"), "原因包含'跨场区'");
+    passed++;
+
+    console.log("8.3 验证API返回事务为跨场区不可回滚");
+    const crossFarmDetail = await api("/api/audit-transactions/" + encodeURIComponent(crossFarmTxn.txnId));
+    assert(crossFarmDetail.data.crossFarm === true, "事务标记为跨场区");
+    assert(crossFarmDetail.data.rollbackable === false, "跨场区事务API返回不可回滚");
+    passed++;
+
+    console.log("8.4 验证单场区事务正常可回滚");
+    const db8b = await loadDb();
+    const singleFarmTxn = beginTxn(db8b, {
+      operator: "测试员",
+      farmId: "FARM-DEFAULT",
+      description: "单场区测试事务",
+    });
+    writeLogToTxn(singleFarmTxn, db8b, {
+      action: "record_create",
+      targetType: "record",
+      targetId: "REC-SINGLE-1",
+      before: null,
+      after: [
+        { id: "REC-SINGLE-1", batchId: firstBatch.id, farmId: "FARM-DEFAULT", date: "2026-08-23" },
+        { id: "REC-SINGLE-2", batchId: firstBatch.id, farmId: "FARM-DEFAULT", date: "2026-08-24" },
+      ],
+      meta: null,
+    });
+    commitTxn(db8b, singleFarmTxn);
+    await saveDb(db8b);
+    const singleFarmCheck = canRollbackTxn(db8b, singleFarmTxn.txnId);
+    assert(singleFarmCheck.ok === true, "单场区事务可回滚");
+    passed++;
+
+    console.log("\n【测试 9】导入事务摘要批次统计\n");
+
+    console.log("9.1 快速导入多条记录（含不同批次模拟，使用同批次多日期）");
+    const batchIdA = firstBatch.id;
+    const importRecords = [
+      { batchId: batchIdA, date: "2026-08-25", poolId: "P-01", temperature: 28, salinity: 22, oxygen: 6.0, feed: 20, mortality: 0.5, abnormal: "无" },
+      { batchId: batchIdA, date: "2026-08-26", poolId: "P-01", temperature: 28.2, salinity: 22, oxygen: 6.1, feed: 21, mortality: 0.4, abnormal: "无" },
+      { batchId: batchIdA, date: "2026-08-27", poolId: "P-01", temperature: 27.9, salinity: 21.5, oxygen: 6.0, feed: 20, mortality: 0.3, abnormal: "无" },
+    ];
+    const importResult = await api("/api/import/records/confirm", {
+      method: "POST",
+      body: JSON.stringify({ records: importRecords, operator: "测试员" }),
+    });
+    assert(importResult.res.ok, "快速导入成功");
+    assert(importResult.data.importedCount === 3, "成功导入3条记录");
+    passed++;
+
+    console.log("9.2 验证导入事务摘要包含正确的批次数量");
+    const logs9 = await api("/api/audit-logs?pageSize=10");
+    const importLog = logs9.data.items.find((l) => l.action === "record_create");
+    const importTxnId = importLog?.txnId;
+    assert(importTxnId, "导入记录有事务ID");
+    const importTxnDetail = await api("/api/audit-transactions/" + encodeURIComponent(importTxnId));
+    assert(importTxnDetail.data.affectedBatchCount === 1, "影响1个批次");
+    assert(Array.isArray(importTxnDetail.data.affectedBatchIds), "有影响批次ID列表");
+    assert(importTxnDetail.data.affectedBatchIds.includes(batchIdA), "批次ID在列表中");
+    assertEqual(importTxnDetail.data.affectedCollections.record, 3, "record集合变更数正确");
     passed++;
 
     console.log("\n=== 测试完成 ===");
