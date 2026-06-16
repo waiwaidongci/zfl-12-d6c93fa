@@ -1,7 +1,7 @@
 import { writeLog } from "../utils/audit-log.js";
 import {
-  buildLedgersForBatch,
-  buildAllLedgers,
+  getLedgersForBatch,
+  getAllQuantityLedgers,
   calculateBatchQuantity,
   calculateSourceComposition,
   validateBatchQuantityConsistency,
@@ -60,7 +60,7 @@ export function createQuantityLedgerRouter(helpers) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
 
-      const ledgers = buildLedgersForBatch(db, batchId);
+      const ledgers = getLedgersForBatch(db, batchId);
       const quantity = calculateBatchQuantity(db, batchId);
       const enriched = ledgers.map(enrichLedger);
 
@@ -129,7 +129,7 @@ export function createQuantityLedgerRouter(helpers) {
     if (method === "GET" && pathname === "/api/quantity-ledgers") {
       const db = await loadDb();
       const farmId = getFarmIdFromQuery(req);
-      const allLedgers = buildAllLedgers(db);
+      const allLedgers = getAllQuantityLedgers(db);
 
       let filtered = allLedgers;
       if (farmId) {
@@ -275,7 +275,7 @@ export function createQuantityLedgerRouter(helpers) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
 
-      const ledgers = buildLedgersForBatch(db, batchId);
+      const ledgers = getLedgersForBatch(db, batchId);
       const quantity = calculateBatchQuantity(db, batchId);
       const sources = calculateSourceComposition(db, batchId);
       const validation = validateBatchQuantityConsistency(db, batchId);
@@ -316,8 +316,8 @@ export function createQuantityLedgerRouter(helpers) {
 }
 
 export {
-  buildLedgersForBatch,
-  buildAllLedgers,
+  getLedgersForBatch,
+  getAllQuantityLedgers,
   calculateBatchQuantity,
   calculateSourceComposition,
   validateBatchQuantityConsistency,

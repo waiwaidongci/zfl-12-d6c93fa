@@ -91,12 +91,10 @@ async function loadDb() {
     dbNeedsSave = true;
   }
 
-  if (!db.quantityLedgers || db.quantityLedgers.length === 0) {
-    const ledgerMigration = migrateLedgersFromSnapshot(db);
-    if (ledgerMigration.addedCount > 0) {
-      console.log(`数量流水账迁移完成，新增 ${ledgerMigration.addedCount} 条记录`);
-      dbNeedsSave = true;
-    }
+  const ledgerMigration = migrateLedgersFromSnapshot(db);
+  if (ledgerMigration.changed) {
+    console.log(`数量流水账迁移完成，当前 ${ledgerMigration.totalCount} 条记录`);
+    dbNeedsSave = true;
   }
 
   const quantityValidation = validateAllBatches(db);

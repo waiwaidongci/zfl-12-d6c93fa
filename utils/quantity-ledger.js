@@ -18,6 +18,8 @@ const LEDGER_CATEGORIES = {
   reserve: "订单占用类",
 };
 
+const ESTIMATE_LEDGER_TYPES = ["initial", "lineage_in", "lineage_out", "inventory"];
+
 function getLedgerTypeLabel(type) {
   return LEDGER_TYPES[type] || type;
 }
@@ -309,14 +311,29 @@ function buildAllLedgers(db) {
   return allLedgers;
 }
 
+function getLedgersForBatch(db, batchId) {
+  const persisted = (db.quantityLedgers || []).filter((l) => l.batchId === batchId);
+  if (persisted.length > 0) {
+    return sortLedgersByDate(persisted);
+  }
+  return buildLedgersForBatch(db, batchId);
+}
+
+function getAllQuantityLedgers(db) {
+  if (Array.isArray(db.quantityLedgers) && db.quantityLedgers.length > 0) {
+    return sortLedgersByDate(db.quantityLedgers);
+  }
+  return buildAllLedgers(db);
+}
+
 function calculateBatchQuantity(db, batchId) {
   const batch = db.batches.find((b) => b.id === batchId);
   if (!batch) return null;
 
-  const ledgers = buildLedgersForBatch(db, batchId);
+  const ledgers = getLedgersForBatch(db, batchId);
 
   const estimateLedgers = ledgers.filter((l) =>
-    l.type === "initial" || l.type === "lineage_in" || l.type === "lineage_out" || l.type === "inventory"
+    ESTIMATE_LEDGER_TYPES.includes(l.type)
   );
 
   const estimatedCount = estimateLedgers.length > 0
@@ -352,9 +369,7 @@ function calculateBatchQuantity(db, batchId) {
 }
 
 function calculateSourceComposition(db, batchId) {
-  const lineages = (db.lineages || []).filter((l) =>
-    l.sources.some((s) => s.batchId === batchId) || l.targets.some((t) => t.batchId === batchId)
-  ).sort((a, b) => a.date.localeCompare(b.date));
+  const lineages = (db.lineages || []).slice().sort((a, b) => a.date.localeCompare(b.date));
 
   function calcInitialQty(bid) {
     const batch = (db.batches || []).find((b) => b.id === bid);
@@ -564,9 +579,12 @@ function validateBatchQuantityConsistency(db, batchId) {
     });
   }
 
-  const ledgers = buildLedgersForBatch(db, batchId);
+  const ledgers = getLedgersForBatch(db, batchId);
   let runningBalance = 0;
   for (const ledger of ledgers) {
+    if (!ESTIMATE_LEDGER_TYPES.includes(ledger.type)) {
+      continue;
+    }
     runningBalance += ledger.change;
     if (Math.abs(runningBalance - ledger.balance) > QUANTITY_CONSTANTS.MISMATCH_THRESHOLD) {
       issues.push({
@@ -648,19 +666,17 @@ function migrateLedgersFromSnapshot(db) {
     db.quantityLedgers = [];
   }
 
-  const existingLedgerIds = new Set(db.quantityLedgers.map((l) => l.id));
   const ledgers = buildAllLedgers(db);
-  let addedCount = 0;
-
-  for (const ledger of ledgers) {
-    if (!existingLedgerIds.has(ledger.id)) {
-      db.quantityLedgers.push(ledger);
-      addedCount++;
-    }
-  }
+  const previousCount = db.quantityLedgers.length;
+  const previousJson = JSON.stringify(sortLedgersByDate(db.quantityLedgers));
+  const nextJson = JSON.stringify(sortLedgersByDate(ledgers));
+  const changed = previousJson !== nextJson;
+  db.quantityLedgers = ledgers;
 
   return {
-    addedCount,
+    addedCount: Math.max(0, ledgers.length - previousCount),
+    removedCount: Math.max(0, previousCount - ledgers.length),
+    changed,
     totalCount: db.quantityLedgers.length,
   };
 }
@@ -670,7 +686,7 @@ function recalculateBatchEstimatesFromLedgers(db) {
   let updatedCount = 0;
 
   for (const batch of batches) {
-    const qty = calculateBatchQuantity(db, batch.id);
+  const qty = calculateBatchQuantity(db, batch.id);
     if (qty && Math.abs(Number(batch.estimatedCount || 0) - qty.estimatedCount) > 0.5) {
       batch.estimatedCount = qty.estimatedCount;
       updatedCount++;
@@ -722,6 +738,8 @@ export {
   getLedgerTypeLabel,
   buildLedgersForBatch,
   buildAllLedgers,
+  getLedgersForBatch,
+  getAllQuantityLedgers,
   calculateBatchQuantity,
   calculateSourceComposition,
   validateBatchQuantityConsistency,

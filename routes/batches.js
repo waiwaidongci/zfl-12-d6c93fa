@@ -3,7 +3,7 @@ import { enrichShipment, getBatchAvailableQuantity, getBatchReservedQuantity } f
 import { writeLog } from "../utils/audit-log.js";
 import { getAllCostCategoriesForFarm, getDefaultCostCategories } from "./farms.js";
 import {
-  buildLedgersForBatch,
+  getLedgersForBatch,
   calculateBatchQuantity,
   calculateSourceComposition,
   validateBatchQuantityConsistency,
@@ -91,7 +91,7 @@ export function batchTrace(db, batchId) {
     l.targets.some((t) => t.batchId === batchId)
   ).sort((a, b) => a.date.localeCompare(b.date));
 
-  const quantityLedgers = buildLedgersForBatch(db, batchId);
+  const quantityLedgers = getLedgersForBatch(db, batchId);
   const quantityCalc = calculateBatchQuantity(db, batchId);
   const sourceComposition = calculateSourceComposition(db, batchId);
   const quantityValidation = validateBatchQuantityConsistency(db, batchId);
