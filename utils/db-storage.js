@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile, rename, copyFile, unlink, stat, access, readdir } from "node:fs/promises";
-import { existsSync, createWriteStream } from "node:fs";
+import { mkdir, readFile, writeFile, rename, copyFile, unlink, stat, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, join, basename, extname } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -223,11 +223,17 @@ async function restoreFromBackup(dbPath, backupPath) {
     });
   }
 
+  let corruptedBackupPath = null;
   if (existsSync(dbPath)) {
-    const corruptedBackupPath = getBackupPath(dbPath + ".corrupted", Date.now());
+    const base = basename(dbPath, extname(dbPath));
+    const backupDir = getBackupDir(dbPath);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    corruptedBackupPath = join(backupDir, `${base}-corrupted-${ts}.json.bak`);
     try {
+      await ensureDir(backupDir);
       await copyFile(dbPath, corruptedBackupPath);
     } catch (e) {
+      corruptedBackupPath = null;
       console.warn(`[db-storage] 保存损坏文件的副本失败:`, e.message);
     }
   }
@@ -236,7 +242,7 @@ async function restoreFromBackup(dbPath, backupPath) {
   return {
     ...result,
     restoredFrom: backupPath,
-    corruptedBackup: existsSync(dbPath + ".corrupted-" + Date.now()) ? null : null,
+    corruptedBackup: corruptedBackupPath,
   };
 }
 
@@ -519,10 +525,11 @@ async function safeSave(dbPath, db, options = {}) {
   const content = JSON.stringify(db, null, 2);
   const contentHash = sha256(content);
 
+  let backupResult = null;
   if (doCreateBackup && existsSync(dbPath)) {
     try {
+      backupResult = await createBackup(dbPath);
       await rotateBackups(dbPath, backupCount);
-      await createBackup(dbPath);
     } catch (e) {
       console.warn(`[db-storage] 备份流程警告（不会阻止保存）:`, e.message);
     }
@@ -564,7 +571,7 @@ async function safeSave(dbPath, db, options = {}) {
     ...writeResult,
     hash: contentHash,
     postValidation,
-    backupCreated: createBackup,
+    backupCreated: backupResult,
   };
 }
 

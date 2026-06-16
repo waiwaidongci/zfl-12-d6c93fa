@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile, unlink, rm, stat, readdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
