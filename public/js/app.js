@@ -4758,6 +4758,14 @@ function confirmImportTransaction({ recordCount, batchCount, batchPreview, mode 
   });
 }
 
+function buildImportBatchSummary(records) {
+  const batchIds = [...new Set((records || []).map((r) => r?.batchId).filter(Boolean))];
+  return {
+    batchCount: batchIds.length,
+    batchPreview: batchIds.slice(0, 5).join(", ") + (batchIds.length > 5 ? ` 等${batchIds.length}个` : ""),
+  };
+}
+
 function renderDataIoDraftDetail(draft) {
   const previewResult = document.getElementById("dataioPreviewResult");
   previewResult.classList.remove("hidden");
@@ -4884,9 +4892,11 @@ function renderDataIoDraftDetail(draft) {
         return;
       }
 
-      const batchIds = [...new Set((draft.rows || []).filter(r => r.valid).map(r => r.batchId))];
-      const batchCount = batchIds.length;
-      const batchPreview = batchIds.slice(0, 5).join(", ") + (batchCount > 5 ? ` 等${batchCount}个` : "");
+      const { batchCount, batchPreview } = buildImportBatchSummary(
+        (draft.rows || [])
+          .filter((r) => r.isValid)
+          .map((r) => r.normalizedRow)
+      );
 
       const confirmed = await confirmImportTransaction({
         recordCount: draft.validCount,
@@ -5084,9 +5094,7 @@ function renderDataIoPreviewQuickMode(result) {
 
   if (confirmBtn) {
     confirmBtn.onclick = async () => {
-      const batchIds = [...new Set(dataioPendingRecords.map(r => r.batchId))];
-      const batchCount = batchIds.length;
-      const batchPreview = batchIds.slice(0, 5).join(", ") + (batchCount > 5 ? ` 等${batchCount}个` : "");
+      const { batchCount, batchPreview } = buildImportBatchSummary(dataioPendingRecords);
 
       const confirmed = await confirmImportTransaction({
         recordCount: dataioPendingRecords.length,
