@@ -447,6 +447,24 @@ await test("safeLoadAndPrepare: 文件损坏从备份恢复", async () => {
   assert.equal(result.db._restoreTest, "good", "应从备份恢复到好的版本");
 });
 
+await test("safeLoadAndPrepare: 文件损坏且无有效备份时保留原文件", async () => {
+  await rm(getBackupDir(TEST_DB), { recursive: true, force: true }).catch(() => {});
+  const corruptedContent = "{ this JSON is broken and must be preserved !!!";
+  await writeFile(TEST_DB, corruptedContent, "utf-8");
+
+  await assert.rejects(
+    () => safeLoadAndPrepare(TEST_DB, {
+      autoCreate: true,
+      seedFn: () => makeValidDb(),
+    }),
+    (e) => e instanceof DbStorageError && e.code === "DB_CORRUPTED_NO_BACKUP",
+    "无有效备份时应停止自动初始化并抛出明确错误"
+  );
+
+  const afterContent = await readFile(TEST_DB, "utf-8");
+  assert.equal(afterContent, corruptedContent, "无有效备份时不应覆盖损坏原文件");
+});
+
 await test("safeLoadAndPrepare: 禁止autoCreate时文件不存在抛错", async () => {
   if (existsSync(TEST_DB)) await unlink(TEST_DB);
   await assert.rejects(

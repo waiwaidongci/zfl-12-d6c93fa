@@ -76,6 +76,16 @@ function getBackupPath(dbPath, timestamp) {
   return join(backupDir, `${base}-${dateStr}.json.bak`);
 }
 
+function getUniqueBackupPath(dbPath, timestamp) {
+  let backupPath = getBackupPath(dbPath, timestamp);
+  let suffix = 1;
+  while (existsSync(backupPath)) {
+    backupPath = getBackupPath(dbPath, timestamp).replace(/\.json\.bak$/, `-${suffix}.json.bak`);
+    suffix++;
+  }
+  return backupPath;
+}
+
 async function ensureDir(dirPath) {
   if (!existsSync(dirPath)) {
     await mkdir(dirPath, { recursive: true });
@@ -186,7 +196,7 @@ async function createBackup(dbPath, sourceContent = null) {
   await ensureDir(backupDir);
 
   const now = Date.now();
-  const backupPath = getBackupPath(dbPath, now);
+  const backupPath = getUniqueBackupPath(dbPath, now);
 
   if (sourceContent !== null) {
     await writeFile(backupPath, sourceContent, "utf-8");
@@ -473,22 +483,11 @@ async function safeLoadAndPrepare(dbPath, options = {}) {
       result.loadedFrom = "backup";
       result.recoveryUsed = true;
     } else {
-      if (autoCreate && seedFn) {
-        console.warn(`[db-storage] 无有效备份，重新初始化种子数据`);
-        const seed = seedFn();
-        const seedContent = JSON.stringify(seed, null, 2);
-        await atomicWriteFile(dbPath, seedContent);
-        result.createdNew = true;
-        result.db = seed;
-        result.originalContent = seedContent;
-        result.loadedFrom = "seed_after_corruption";
-      } else {
-        throw new DbStorageError("数据库文件损坏且无有效备份", {
-          code: "DB_CORRUPTED_NO_BACKUP",
-          cause: parseError,
-          details: { dbPath },
-        });
-      }
+      throw new DbStorageError("数据库文件损坏且无有效备份，已停止自动初始化以保留原文件", {
+        code: "DB_CORRUPTED_NO_BACKUP",
+        cause: parseError,
+        details: { dbPath },
+      });
     }
   }
 
