@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:txn": "node test_transactions.js",
+    "test:import": "node test_import.js",
+    "test:inventory": "node test_inventory.js",
+    "test:orders": "node test_orders.js",
+    "test:stock": "node test_stock_reservation.js",
+    "test:import-draft": "node test_import_draft.js",
+    "test": "npm run test:import-draft"
   }
 }
