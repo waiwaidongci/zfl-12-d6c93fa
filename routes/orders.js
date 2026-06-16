@@ -1,5 +1,6 @@
 import { writeLog } from "../utils/audit-log.js";
 import { getBatchAvailableQuantity } from "./shipments.js";
+import { updateBatchLedgers } from "../utils/quantity-ledger.js";
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 const APPROACHING_THRESHOLD_DAYS = 7;
@@ -273,6 +274,9 @@ export function createOrdersRouter(helpers) {
         after: order,
         farmId: farmId,
       });
+
+      updateBatchLedgers(db, order.batchId);
+
       await saveDb(db);
 
       return sendJson(res, 201, enrichOrder(order, db));
@@ -367,6 +371,9 @@ export function createOrdersRouter(helpers) {
           after: orders[orderIndex],
           farmId: existing.farmId,
         });
+
+        updateBatchLedgers(db, existing.batchId);
+
         await saveDb(db);
         return sendJson(res, 200, enrichOrder(updated, db));
       }
@@ -397,6 +404,9 @@ export function createOrdersRouter(helpers) {
           after: null,
           farmId: order.farmId,
         });
+
+        updateBatchLedgers(db, order.batchId);
+
         await saveDb(db);
         return sendJson(res, 200, { removed: deleted });
       }

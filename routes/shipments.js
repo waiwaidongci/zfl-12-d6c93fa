@@ -1,5 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
-import { calculateBatchQuantity } from "../utils/quantity-ledger.js";
+import { calculateBatchQuantity, updateBatchLedgers } from "../utils/quantity-ledger.js";
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -210,6 +210,9 @@ export function createShipmentsRouter(helpers) {
         after: shipment,
         farmId: farmId,
       });
+
+      updateBatchLedgers(db, shipment.batchId);
+
       await saveDb(db);
 
       return sendJson(res, 201, enrichShipment(shipment, db));
@@ -248,6 +251,9 @@ export function createShipmentsRouter(helpers) {
           after: null,
           farmId: shipment.farmId,
         });
+
+        updateBatchLedgers(db, shipment.batchId);
+
         await saveDb(db);
         return sendJson(res, 200, { removed: deleted });
       }
@@ -290,12 +296,13 @@ export function createShipmentsRouter(helpers) {
 
       const reservedQuantity = getBatchReservedQuantity(batch, db);
       const availableQuantity = getBatchAvailableQuantity(batch, db);
+      const qtyCalc = calculateBatchQuantity(db, batchId);
 
       return sendJson(res, 200, {
         batchId,
-        estimatedCount: Number(batch.estimatedCount),
-        oldSalesQuantity,
-        shippedQuantity,
+        estimatedCount: qtyCalc ? qtyCalc.estimatedCount : Number(batch.estimatedCount),
+        oldSalesQuantity: qtyCalc ? qtyCalc.oldSalesQuantity : oldSalesQuantity,
+        shippedQuantity: qtyCalc ? qtyCalc.shippedQuantity : shippedQuantity,
         reservedQuantity,
         availableQuantity,
       });

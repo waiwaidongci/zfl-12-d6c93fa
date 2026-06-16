@@ -1,4 +1,9 @@
 import { writeLog } from "../utils/audit-log.js";
+import {
+  calculateBatchQuantity,
+  calculateSourceComposition,
+  updateRelatedBatchLedgers,
+} from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -658,11 +663,11 @@ function buildFlowAudit(db, batchId, farmId) {
     }
   }
 
-  const contribution = computeContribution(db, batchId, farmId);
-  const sourceComposition = contribution.map((c) => ({
+  const sourceResult = calculateSourceComposition(db, batchId);
+  const sourceComposition = sourceResult.sources.map((c) => ({
     batchId: c.batchId,
     species: c.species,
-    estimatedCount: c.estimatedCount,
+    estimatedCount: c.initialEstimatedCount,
     percentage: c.percentage || 0,
     contributionCount: c.contributionCount || 0,
   }));
@@ -711,13 +716,18 @@ export function createLineageRouter(helpers) {
     if (contribMatch && method === "GET") {
       const db = await loadDb();
       const batchId = contribMatch[1];
-      const farmId = getFarmIdFromQuery(req);
       const batch = db.batches.find((b) => b.id === batchId);
       if (!batch) {
         return sendJson(res, 404, { error: "批次不存在" });
       }
-      const contributions = computeContribution(db, batchId, farmId);
-      return sendJson(res, 200, { batchId, contributions });
+      const sourceResult = calculateSourceComposition(db, batchId);
+      const contributions = sourceResult.sources;
+      return sendJson(res, 200, {
+        batchId,
+        currentEstimatedCount: sourceResult.currentEstimatedCount,
+        sourceInitialTotal: sourceResult.sourceInitialTotal,
+        contributions,
+      });
     }
 
     const auditMatch = pathname.match(/^\/api\/lineage\/([^/]+)\/flow-audit$/);
@@ -917,6 +927,12 @@ export function createLineageRouter(helpers) {
         },
       });
 
+      const allRelatedBatchIds = [
+        ...input.sources.map((s) => s.batchId),
+        ...input.targets.map((t) => t.batchId),
+      ];
+      updateRelatedBatchLedgers(db, allRelatedBatchIds);
+
       await saveDb(db);
       return sendJson(res, 201, lineage);
     }
@@ -944,6 +960,12 @@ export function createLineageRouter(helpers) {
         after: null,
         farmId: lineage.farmId,
       });
+
+      const allRelatedBatchIds = [
+        ...lineage.sources.map((s) => s.batchId),
+        ...lineage.targets.map((t) => t.batchId),
+      ];
+      updateRelatedBatchLedgers(db, allRelatedBatchIds);
 
       await saveDb(db);
       return sendJson(res, 200, { success: true, message: "血缘记录已删除" });

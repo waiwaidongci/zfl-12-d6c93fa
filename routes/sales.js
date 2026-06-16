@@ -1,4 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
+import { updateBatchLedgers } from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -87,6 +88,9 @@ export function createSalesRouter(helpers) {
         after: sale,
         farmId: farmId,
       });
+
+      updateBatchLedgers(db, sale.batchId);
+
       await saveDb(db);
       return sendJson(res, 201, enrichSale(sale, db));
     }

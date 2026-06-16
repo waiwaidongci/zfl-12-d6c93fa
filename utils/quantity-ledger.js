@@ -480,6 +480,13 @@ function calculateSourceComposition(db, batchId) {
   };
 }
 
+const QUANTITY_CONSTANTS = {
+  MISMATCH_THRESHOLD: 0.5,
+  LINEAGE_IMBALANCE_THRESHOLD: 0.05,
+  LINEAGE_IMBALANCE_WARNING: 0.0001,
+  AVAILABLE_NEGATIVE: 0,
+};
+
 function validateBatchQuantityConsistency(db, batchId) {
   const issues = [];
   const batch = db.batches.find((b) => b.id === batchId);
@@ -491,10 +498,10 @@ function validateBatchQuantityConsistency(db, batchId) {
   const snapshotEstimate = Number(batch.estimatedCount || 0);
   const ledgerEstimate = qtyCalc.estimatedCount;
 
-  if (Math.abs(snapshotEstimate - ledgerEstimate) > 0.5) {
+  if (Math.abs(snapshotEstimate - ledgerEstimate) > QUANTITY_CONSTANTS.MISMATCH_THRESHOLD) {
     issues.push({
       type: "estimate_mismatch",
-      level: "warning",
+      level: "error",
       message: `估算数量不一致：快照值 ${snapshotEstimate.toLocaleString()} 尾，流水账推导值 ${ledgerEstimate.toLocaleString()} 尾，差异 ${(snapshotEstimate - ledgerEstimate).toLocaleString()} 尾`,
       snapshotValue: snapshotEstimate,
       ledgerValue: ledgerEstimate,
@@ -502,7 +509,7 @@ function validateBatchQuantityConsistency(db, batchId) {
     });
   }
 
-  if (qtyCalc.availableQuantity < 0) {
+  if (qtyCalc.availableQuantity < QUANTITY_CONSTANTS.AVAILABLE_NEGATIVE) {
     issues.push({
       type: "negative_available",
       level: "error",
@@ -521,11 +528,47 @@ function validateBatchQuantityConsistency(db, batchId) {
     });
   }
 
+  if (qtyCalc.oldSalesQuantity > qtyCalc.estimatedCount) {
+    issues.push({
+      type: "over_sold_old",
+      level: "error",
+      message: `旧销售超过估算数量：旧销售 ${qtyCalc.oldSalesQuantity.toLocaleString()} 尾，估算 ${qtyCalc.estimatedCount.toLocaleString()} 尾`,
+      oldSales: qtyCalc.oldSalesQuantity,
+      estimated: qtyCalc.estimatedCount,
+    });
+  }
+
+  if (qtyCalc.shippedQuantity > qtyCalc.estimatedCount) {
+    issues.push({
+      type: "over_shipped",
+      level: "error",
+      message: `发货超过估算数量：发货 ${qtyCalc.shippedQuantity.toLocaleString()} 尾，估算 ${qtyCalc.estimatedCount.toLocaleString()} 尾`,
+      shipped: qtyCalc.shippedQuantity,
+      estimated: qtyCalc.estimatedCount,
+    });
+  }
+
+  const totalOut = qtyCalc.oldSalesQuantity + qtyCalc.shippedQuantity + qtyCalc.reservedQuantity;
+  if (totalOut > qtyCalc.estimatedCount) {
+    issues.push({
+      type: "total_outflow_exceed",
+      level: "error",
+      message: `总流出超过估算数量：总流出 ${totalOut.toLocaleString()} 尾，估算 ${qtyCalc.estimatedCount.toLocaleString()} 尾`,
+      totalOut,
+      estimated: qtyCalc.estimatedCount,
+      breakdown: {
+        oldSales: qtyCalc.oldSalesQuantity,
+        shipped: qtyCalc.shippedQuantity,
+        reserved: qtyCalc.reservedQuantity,
+      },
+    });
+  }
+
   const ledgers = buildLedgersForBatch(db, batchId);
   let runningBalance = 0;
   for (const ledger of ledgers) {
     runningBalance += ledger.change;
-    if (Math.abs(runningBalance - ledger.balance) > 0.5) {
+    if (Math.abs(runningBalance - ledger.balance) > QUANTITY_CONSTANTS.MISMATCH_THRESHOLD) {
       issues.push({
         type: "ledger_balance_error",
         level: "error",
@@ -546,14 +589,25 @@ function validateBatchQuantityConsistency(db, batchId) {
     const totalTarget = lineage.targets.reduce((s, tgt) => s + Number(tgt.receivedCount || 0), 0);
     if (totalSource > 0 && totalTarget > 0) {
       const diffPct = Math.abs(totalTarget - totalSource) / totalSource;
-      if (diffPct > 0.05) {
+      if (diffPct > QUANTITY_CONSTANTS.LINEAGE_IMBALANCE_THRESHOLD) {
         issues.push({
           type: "lineage_imbalance",
-          level: "warning",
-          message: `血缘记录 ${lineage.id} 数量不平衡：来源 ${totalSource.toLocaleString()} 尾，目标 ${totalTarget.toLocaleString()} 尾`,
+          level: "error",
+          message: `血缘记录 ${lineage.id} 数量严重不平衡：来源 ${totalSource.toLocaleString()} 尾，目标 ${totalTarget.toLocaleString()} 尾，差异 ${(diffPct * 100).toFixed(2)}%`,
           lineageId: lineage.id,
           totalSource,
           totalTarget,
+          diffPct,
+        });
+      } else if (diffPct > QUANTITY_CONSTANTS.LINEAGE_IMBALANCE_WARNING) {
+        issues.push({
+          type: "lineage_imbalance",
+          level: "warning",
+          message: `血缘记录 ${lineage.id} 数量轻微不平衡：来源 ${totalSource.toLocaleString()} 尾，目标 ${totalTarget.toLocaleString()} 尾，差异 ${(diffPct * 100).toFixed(4)}%`,
+          lineageId: lineage.id,
+          totalSource,
+          totalTarget,
+          diffPct,
         });
       }
     }
@@ -629,9 +683,42 @@ function recalculateBatchEstimatesFromLedgers(db) {
   };
 }
 
+function updateBatchLedgers(db, batchId) {
+  if (!db.quantityLedgers) {
+    db.quantityLedgers = [];
+  }
+
+  const existingIds = new Set(
+    db.quantityLedgers
+      .filter((l) => l.batchId === batchId)
+      .map((l) => l.id)
+  );
+
+  const newLedgers = buildLedgersForBatch(db, batchId);
+  const filtered = db.quantityLedgers.filter((l) => l.batchId !== batchId);
+  db.quantityLedgers = [...filtered, ...newLedgers];
+
+  return {
+    batchId,
+    removedCount: existingIds.size,
+    addedCount: newLedgers.length,
+    totalCount: db.quantityLedgers.length,
+  };
+}
+
+function updateRelatedBatchLedgers(db, batchIds) {
+  const results = [];
+  const uniqueIds = [...new Set(batchIds)];
+  for (const bid of uniqueIds) {
+    results.push(updateBatchLedgers(db, bid));
+  }
+  return results;
+}
+
 export {
   LEDGER_TYPES,
   LEDGER_CATEGORIES,
+  QUANTITY_CONSTANTS,
   getLedgerTypeLabel,
   buildLedgersForBatch,
   buildAllLedgers,
@@ -642,4 +729,6 @@ export {
   migrateLedgersFromSnapshot,
   recalculateBatchEstimatesFromLedgers,
   sortLedgersByDate,
+  updateBatchLedgers,
+  updateRelatedBatchLedgers,
 };

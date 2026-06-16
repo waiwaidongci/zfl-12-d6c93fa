@@ -1,4 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
+import { updateBatchLedgers } from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -110,6 +111,8 @@ export function createInventoriesRouter(helpers) {
         meta: { batchId: batch.id, previousEstimatedCount: systemEstimate },
       });
 
+      updateBatchLedgers(db, input.batchId);
+
       await saveDb(db);
       return sendJson(res, 201, inventory);
     }
@@ -162,6 +165,8 @@ export function createInventoriesRouter(helpers) {
           after: null,
           farmId: removed.farmId,
         });
+
+        updateBatchLedgers(db, removed.batchId);
 
         await saveDb(db);
         return sendJson(res, 200, { ok: true, removed });
