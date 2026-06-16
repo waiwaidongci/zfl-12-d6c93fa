@@ -1,4 +1,5 @@
 import { getBatchAvailableQuantity, getBatchReservedQuantity } from "./shipments.js";
+import { calculateBatchQuantity } from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -27,6 +28,22 @@ function calcFarmStats(db, farmId) {
   const availableCount = batches.reduce((sum, b) => {
     return sum + getBatchAvailableQuantity(b, db);
   }, 0);
+
+  let totalEstimatedFromLedger = 0;
+  let totalAvailableFromLedger = 0;
+  let totalReservedFromLedger = 0;
+  let totalOldSalesFromLedger = 0;
+  let totalShippedFromLedger = 0;
+  for (const batch of batches) {
+    const qty = calculateBatchQuantity(db, batch.id);
+    if (qty) {
+      totalEstimatedFromLedger += qty.estimatedCount;
+      totalAvailableFromLedger += qty.availableQuantity;
+      totalReservedFromLedger += qty.reservedQuantity;
+      totalOldSalesFromLedger += qty.oldSalesQuantity;
+      totalShippedFromLedger += qty.shippedQuantity;
+    }
+  }
 
   const validOrders = orders.filter((o) => o.status !== "cancelled");
   const totalOrderAmount = validOrders.reduce((sum, o) => {
@@ -74,6 +91,14 @@ function calcFarmStats(db, farmId) {
     orderCount: validOrders.length,
     shipmentCount: shipments.length,
     warningCount: warnings.length,
+    quantityFromLedger: {
+      totalEstimatedCount: totalEstimatedFromLedger,
+      totalAvailableQuantity: totalAvailableFromLedger,
+      totalReservedQuantity: totalReservedFromLedger,
+      totalOldSalesQuantity: totalOldSalesFromLedger,
+      totalShippedQuantity: totalShippedFromLedger,
+      totalSoldCount: totalOldSalesFromLedger + totalShippedFromLedger,
+    },
   };
 }
 

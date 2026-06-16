@@ -20,6 +20,7 @@ import { createFarmsRouter, ensureDefaultFarm, migrateDataToFarm, migrateFarmCos
 import { createAuditLogRouter } from "./routes/audit-log.js";
 import { createLineageRouter, migrateTransfersToLineage } from "./routes/lineage.js";
 import { createOverviewRouter } from "./routes/overview.js";
+import { createQuantityLedgerRouter, migrateLedgersFromSnapshot, validateAllBatches } from "./routes/quantity-ledger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -90,6 +91,19 @@ async function loadDb() {
     dbNeedsSave = true;
   }
 
+  if (!db.quantityLedgers || db.quantityLedgers.length === 0) {
+    const ledgerMigration = migrateLedgersFromSnapshot(db);
+    if (ledgerMigration.addedCount > 0) {
+      console.log(`数量流水账迁移完成，新增 ${ledgerMigration.addedCount} 条记录`);
+      dbNeedsSave = true;
+    }
+  }
+
+  const quantityValidation = validateAllBatches(db);
+  if (quantityValidation.hasIssues) {
+    console.log(`数量一致性校验发现 ${quantityValidation.totalErrors} 个错误和 ${quantityValidation.totalWarnings} 个警告`);
+  }
+
   if (dbNeedsSave) {
     await writeFile(dbPath, JSON.stringify(db, null, 2));
   }
@@ -144,6 +158,7 @@ function filterStateByFarm(db, farmId) {
     "lineages",
     "opLogs",
     "importDrafts",
+    "quantityLedgers",
   ];
   const scopedDb = { ...db };
   for (const collection of scopedCollections) {
@@ -171,6 +186,7 @@ const farmsRouter = createFarmsRouter(helpers);
 const auditLogRouter = createAuditLogRouter(helpers);
 const lineageRouter = createLineageRouter(helpers);
 const overviewRouter = createOverviewRouter(helpers);
+const quantityLedgerRouter = createQuantityLedgerRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
@@ -228,6 +244,9 @@ async function routeApi(req, res, url, method) {
 
   const result16 = await overviewRouter(req, res, pathname, method);
   if (result16 !== false) return result16;
+
+  const result17 = await quantityLedgerRouter(req, res, pathname, method);
+  if (result17 !== false) return result17;
 
   return false;
 }

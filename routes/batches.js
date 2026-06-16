@@ -2,6 +2,13 @@ import { enrichOrder } from "./orders.js";
 import { enrichShipment, getBatchAvailableQuantity, getBatchReservedQuantity } from "./shipments.js";
 import { writeLog } from "../utils/audit-log.js";
 import { getAllCostCategoriesForFarm, getDefaultCostCategories } from "./farms.js";
+import {
+  buildLedgersForBatch,
+  calculateBatchQuantity,
+  calculateSourceComposition,
+  validateBatchQuantityConsistency,
+  getLedgerTypeLabel,
+} from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -84,6 +91,11 @@ export function batchTrace(db, batchId) {
     l.targets.some((t) => t.batchId === batchId)
   ).sort((a, b) => a.date.localeCompare(b.date));
 
+  const quantityLedgers = buildLedgersForBatch(db, batchId);
+  const quantityCalc = calculateBatchQuantity(db, batchId);
+  const sourceComposition = calculateSourceComposition(db, batchId);
+  const quantityValidation = validateBatchQuantityConsistency(db, batchId);
+
   const initialCost = Number(batch.cost || 0);
   const farmId = batch.farmId || getDefaultFarmId(db);
   const costSummary = calcCostSummary(costItems, db, farmId);
@@ -150,6 +162,10 @@ export function batchTrace(db, batchId) {
     warnings,
     inventories,
     lineages,
+    quantityLedgers,
+    quantityCalc,
+    sourceComposition,
+    quantityValidation,
     summary: {
       averageTemperature: avg(records, "temperature"),
       averageOxygen: avg(records, "oxygen"),
@@ -161,6 +177,7 @@ export function batchTrace(db, batchId) {
       costItemsTotal: costSummary.total,
       totalCost,
       estimatedCount,
+      estimatedCountFromLedger: quantityCalc?.estimatedCount || 0,
       unitCost,
       soldCount,
       salesRevenue: Number(salesRevenue.toFixed(2)),
@@ -177,6 +194,7 @@ export function batchTrace(db, batchId) {
         shippedCount,
         revenue: Number(shipmentRevenue.toFixed(2)),
       },
+      quantity: quantityCalc,
     },
   };
 }

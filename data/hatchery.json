@@ -1173,5 +1173,306 @@
       "updatedAt": "2026-06-15T04:15:08.060Z"
     }
   ],
-  "importDrafts": []
+  "importDrafts": [],
+  "quantityLedgers": [
+    {
+      "id": "LEDGER-INIT-B-260601",
+      "batchId": "B-260601",
+      "type": "initial",
+      "date": "2026-06-03",
+      "change": 900000,
+      "balance": 900000,
+      "referenceType": "transfer",
+      "referenceId": "TR-1",
+      "note": "初次入池",
+      "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-1781451860911-me9y",
+      "batchId": "B-260601",
+      "type": "lineage_in",
+      "date": "2026-06-14",
+      "change": 200000,
+      "balance": 800000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451860911-me9y",
+      "note": "批次拆分：密度过大，拆分到新池",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "split",
+        "otherBatches": []
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-1781451860911-me9y",
+      "batchId": "B-260601",
+      "type": "lineage_out",
+      "date": "2026-06-14",
+      "change": -300000,
+      "balance": 600000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451860911-me9y",
+      "note": "批次拆分：密度过大，拆分到新池",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "split",
+        "otherBatches": [
+          {
+            "batchId": "B-260614",
+            "count": 100000,
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-1781451903602-p0mf",
+      "batchId": "B-260601",
+      "type": "lineage_out",
+      "date": "2026-06-15",
+      "change": -50000,
+      "balance": 750000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451903602-p0mf",
+      "note": "批次合并：合并批次提高管理效率",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "merge",
+        "otherBatches": [
+          {
+            "batchId": "B-260615",
+            "count": 100000,
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-1781452022390-v4nm",
+      "batchId": "B-260601",
+      "type": "lineage_in",
+      "date": "2026-06-16",
+      "change": 60000,
+      "balance": 710000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781452022390-v4nm",
+      "note": "混养分配：调整密度，跨池混养优化生长",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": [
+          {
+            "batchId": "B-260614",
+            "count": 50000,
+            "role": "source"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-1781452022390-v4nm",
+      "batchId": "B-260601",
+      "type": "lineage_out",
+      "date": "2026-06-16",
+      "change": -100000,
+      "balance": 650000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781452022390-v4nm",
+      "note": "混养分配：调整密度，跨池混养优化生长",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": [
+          {
+            "batchId": "B-260614",
+            "count": 90000,
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-MIG-TR-1781452032398",
+      "batchId": "B-260601",
+      "type": "lineage_in",
+      "date": "2026-06-17",
+      "change": 50000,
+      "balance": 710000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-MIG-TR-1781452032398",
+      "note": "混养分配：测试数据迁移（数据迁移）",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": []
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-MIG-TR-1781452032398",
+      "batchId": "B-260601",
+      "type": "lineage_out",
+      "date": "2026-06-17",
+      "change": -50000,
+      "balance": 660000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-MIG-TR-1781452032398",
+      "note": "混养分配：测试数据迁移（数据迁移）",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": []
+      }
+    },
+    {
+      "id": "LEDGER-INIT-B-260614",
+      "batchId": "B-260614",
+      "type": "initial",
+      "date": "2026-06-14",
+      "change": 0,
+      "balance": 0,
+      "referenceType": "transfer",
+      "referenceId": "TR-1781451851551",
+      "note": "新批次入池",
+      "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-1781451860911-me9y",
+      "batchId": "B-260614",
+      "type": "lineage_in",
+      "date": "2026-06-14",
+      "change": 100000,
+      "balance": 100000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451860911-me9y",
+      "note": "批次拆分：密度过大，拆分到新池",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "split",
+        "otherBatches": [
+          {
+            "batchId": "B-260601",
+            "count": 300000,
+            "role": "source"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-1781451903602-p0mf",
+      "batchId": "B-260614",
+      "type": "lineage_out",
+      "date": "2026-06-15",
+      "change": -50000,
+      "balance": 50000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451903602-p0mf",
+      "note": "批次合并：合并批次提高管理效率",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "merge",
+        "otherBatches": [
+          {
+            "batchId": "B-260615",
+            "count": 100000,
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-1781452022390-v4nm",
+      "batchId": "B-260614",
+      "type": "lineage_in",
+      "date": "2026-06-16",
+      "change": 90000,
+      "balance": 90000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781452022390-v4nm",
+      "note": "混养分配：调整密度，跨池混养优化生长",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": [
+          {
+            "batchId": "B-260601",
+            "count": 100000,
+            "role": "source"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-LIN-OUT-LIN-1781452022390-v4nm",
+      "batchId": "B-260614",
+      "type": "lineage_out",
+      "date": "2026-06-16",
+      "change": -50000,
+      "balance": 0,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781452022390-v4nm",
+      "note": "混养分配：调整密度，跨池混养优化生长",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "mix",
+        "otherBatches": [
+          {
+            "batchId": "B-260601",
+            "count": 60000,
+            "role": "target"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-INIT-B-260615",
+      "batchId": "B-260615",
+      "type": "initial",
+      "date": "2026-06-15",
+      "change": 0,
+      "balance": 0,
+      "referenceType": "transfer",
+      "referenceId": "TR-1781451895873",
+      "note": "新批次入池",
+      "farmId": "FARM-DEFAULT"
+    },
+    {
+      "id": "LEDGER-LIN-IN-LIN-1781451903602-p0mf",
+      "batchId": "B-260615",
+      "type": "lineage_in",
+      "date": "2026-06-15",
+      "change": 100000,
+      "balance": 100000,
+      "referenceType": "lineage",
+      "referenceId": "LIN-1781451903602-p0mf",
+      "note": "批次合并：合并批次提高管理效率",
+      "farmId": "FARM-DEFAULT",
+      "detail": {
+        "lineageType": "merge",
+        "otherBatches": [
+          {
+            "batchId": "B-260601",
+            "count": 50000,
+            "role": "source"
+          },
+          {
+            "batchId": "B-260614",
+            "count": 50000,
+            "role": "source"
+          }
+        ]
+      }
+    },
+    {
+      "id": "LEDGER-INIT-B-LAOSHAN-01",
+      "batchId": "B-LAOSHAN-01",
+      "type": "initial",
+      "date": "2026-06-10",
+      "change": 50000,
+      "balance": 50000,
+      "referenceType": "transfer",
+      "referenceId": "TR-1781491032103",
+      "note": "新批次入池",
+      "farmId": "FARM-001"
+    }
+  ]
 }

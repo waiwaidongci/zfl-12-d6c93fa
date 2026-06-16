@@ -1,4 +1,5 @@
 import { writeLog } from "../utils/audit-log.js";
+import { calculateBatchQuantity } from "../utils/quantity-ledger.js";
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
 function getDefaultFarmId(db) {
@@ -66,35 +67,13 @@ function sanitizeShipment(input, existing = null) {
 }
 
 function getBatchReservedQuantity(batch, db) {
-  const orders = (db.orders || [])
-    .filter((o) => o.batchId === batch.id && o.status !== "cancelled" && o.status !== "completed");
-
-  let reserved = 0;
-  for (const order of orders) {
-    const orderShipments = (db.shipments || [])
-      .filter((s) => s.orderId === order.id);
-    const orderShippedQty = orderShipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
-    const remaining = Math.max(0, Number(order.orderQuantity) - orderShippedQty);
-    reserved += remaining;
-  }
-  return reserved;
+  const qty = calculateBatchQuantity(db, batch.id);
+  return qty ? qty.reservedQuantity : 0;
 }
 
 function getBatchAvailableQuantity(batch, db) {
-  const estimatedCount = Number(batch.estimatedCount || 0);
-
-  const oldSales = (db.sales || [])
-    .filter((s) => s.batchId === batch.id);
-  const oldSalesQuantity = oldSales.reduce((sum, s) => sum + Number(s.count || 0), 0);
-
-  const shipments = (db.shipments || [])
-    .filter((s) => s.batchId === batch.id);
-  const shippedQuantity = shipments.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
-
-  const reservedQuantity = getBatchReservedQuantity(batch, db);
-
-  const available = estimatedCount - oldSalesQuantity - shippedQuantity - reservedQuantity;
-  return Math.max(0, available);
+  const qty = calculateBatchQuantity(db, batch.id);
+  return qty ? qty.availableQuantity : 0;
 }
 
 function enrichShipment(shipment, db) {
