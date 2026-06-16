@@ -1,5 +1,5 @@
 import http from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,17 @@ import { createAuditLogRouter } from "./routes/audit-log.js";
 import { createLineageRouter, migrateTransfersToLineage } from "./routes/lineage.js";
 import { createOverviewRouter } from "./routes/overview.js";
 import { createQuantityLedgerRouter, migrateLedgersFromSnapshot, validateAllBatches } from "./routes/quantity-ledger.js";
+import {
+  DbStorageError,
+  safeLoadAndPrepare,
+  safeSave,
+  runMigration,
+  validateStructure,
+  listBackups,
+  restoreFromBackup,
+  findLatestValidBackup,
+  DEFAULT_BACKUP_COUNT,
+} from "./utils/db-storage.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = join(__dirname, "data", "hatchery.json");
@@ -41,75 +52,135 @@ const MIME_TYPES = {
   ".woff2": "font/woff2",
 };
 
-async function loadDb() {
-  let dbNeedsSave = false;
-  if (!existsSync(dbPath)) {
-    await mkdir(dirname(dbPath), { recursive: true });
-    await writeFile(dbPath, JSON.stringify(getInitialSeed(), null, 2));
-    dbNeedsSave = false;
-  }
-  const db = JSON.parse(await readFile(dbPath, "utf8"));
+async function runAllMigrations(db) {
+  const results = [];
 
-  if (!db.lineages) {
-    db.lineages = [];
-    dbNeedsSave = true;
-  }
+  const m1 = await runMigration(dbPath, db, (d) => {
+    if (!d.lineages) d.lineages = [];
+    return { initialized: !d.lineages };
+  }, { migrationName: "init_lineages" });
+  results.push(m1);
 
-  const migratedLineageCount = migrateTransfersToLineage(db);
-  if (migratedLineageCount > 0) {
-    console.log(`迁移了 ${migratedLineageCount} 条 transfer 记录为 lineage 记录`);
-    dbNeedsSave = true;
+  const m2 = await runMigration(dbPath, db, (d) => {
+    return migrateTransfersToLineage(d);
+  }, { migrationName: "transfers_to_lineage" });
+  if (m2.changed && m2.migrationResult > 0) {
+    console.log(`[migration] 迁移了 ${m2.migrationResult} 条 transfer 记录为 lineage 记录`);
   }
+  results.push(m2);
 
-  const defaultFarm = ensureDefaultFarm(db);
-  if (defaultFarm) {
-    const migratedCount = migrateDataToFarm(db, defaultFarm);
-    if (migratedCount > 0 || !db.farms || db.farms.length === 0) {
-      dbNeedsSave = true;
+  const m3 = await runMigration(dbPath, db, (d) => {
+    const farm = ensureDefaultFarm(d);
+    const migrated = migrateDataToFarm(d, farm);
+    if (!d.farms || d.farms.length === 0) {
+      ensureDefaultFarm(d);
+      migrateDataToFarm(d, d.farms[0]);
     }
-  }
+    return { defaultFarmCreated: !!farm, dataMigratedCount: migrated };
+  }, { migrationName: "ensure_farms_and_migrate" });
+  results.push(m3);
 
-  if (!db.farms || db.farms.length === 0) {
-    ensureDefaultFarm(db);
-    migrateDataToFarm(db, db.farms[0]);
-    dbNeedsSave = true;
+  const m4 = await runMigration(dbPath, db, (d) => {
+    return migrateFarmCostCategories(d);
+  }, { migrationName: "farm_cost_categories" });
+  if (m4.changed && m4.migrationResult > 0) {
+    console.log(`[migration] 迁移了 ${m4.migrationResult} 个场区的成本分类`);
   }
+  results.push(m4);
 
-  const migratedCostCategories = migrateFarmCostCategories(db);
-  if (migratedCostCategories > 0) {
-    console.log(`迁移了 ${migratedCostCategories} 个场区的成本分类`);
-    dbNeedsSave = true;
-  }
+  const m5 = await runMigration(dbPath, db, (d) => {
+    const changed = !d.importDrafts;
+    if (!d.importDrafts) d.importDrafts = [];
+    return { initialized: changed };
+  }, { migrationName: "init_import_drafts" });
+  results.push(m5);
 
-  if (!db.importDrafts) {
-    db.importDrafts = [];
-    dbNeedsSave = true;
-  }
+  const m6 = await runMigration(dbPath, db, (d) => {
+    const changed = !d.warnings;
+    if (!d.warnings) d.warnings = [];
+    return { initialized: changed };
+  }, { migrationName: "init_warnings" });
+  results.push(m6);
 
-  if (!db.warnings) {
-    db.warnings = [];
-    dbNeedsSave = true;
+  const m7 = await runMigration(dbPath, db, (d) => {
+    return migrateLedgersFromSnapshot(d);
+  }, { migrationName: "quantity_ledgers" });
+  if (m7.changed) {
+    console.log(`[migration] 数量流水账迁移完成，当前 ${m7.migrationResult?.totalCount ?? 0} 条记录`);
   }
-
-  const ledgerMigration = migrateLedgersFromSnapshot(db);
-  if (ledgerMigration.changed) {
-    console.log(`数量流水账迁移完成，当前 ${ledgerMigration.totalCount} 条记录`);
-    dbNeedsSave = true;
-  }
+  results.push(m7);
 
   const quantityValidation = validateAllBatches(db);
   if (quantityValidation.hasIssues) {
-    console.log(`数量一致性校验发现 ${quantityValidation.totalErrors} 个错误和 ${quantityValidation.totalWarnings} 个警告`);
+    console.log(`[validation] 数量一致性校验发现 ${quantityValidation.totalErrors} 个错误和 ${quantityValidation.totalWarnings} 个警告`);
   }
 
-  if (dbNeedsSave) {
-    await writeFile(dbPath, JSON.stringify(db, null, 2));
+  const hasChanges = results.some((r) => r.changed);
+  return { results, hasChanges, quantityValidation };
+}
+
+async function loadDb() {
+  const loadResult = await safeLoadAndPrepare(dbPath, {
+    autoCreate: true,
+    seedFn: getInitialSeed,
+  });
+
+  const db = loadResult.db;
+
+  if (loadResult.recoveryUsed) {
+    console.warn(`[db-storage] 警告：从备份恢复数据 (来源: ${loadResult.loadedFrom})`);
   }
+
+  if (loadResult.preValidation && !loadResult.preValidation.valid) {
+    console.warn(`[db-storage] 加载后结构有 ${loadResult.preValidation.stats.errorCount} 个错误，将在迁移时尝试修复`);
+  }
+
+  const migrationResult = await runAllMigrations(db);
+
+  if (migrationResult.hasChanges) {
+    try {
+      await saveDb(db);
+    } catch (e) {
+      if (e instanceof DbStorageError) {
+        console.error(`[db-storage] 迁移后保存失败: ${e.message} (code=${e.code})`);
+      } else {
+        console.error(`[db-storage] 迁移后保存失败:`, e);
+      }
+      throw e;
+    }
+  }
+
+  const postCheck = validateStructure(db);
+  if (!postCheck.valid) {
+    console.error(`[db-storage] 致命错误：迁移后结构仍有 ${postCheck.stats.errorCount} 个错误`);
+    for (const err of postCheck.errors) {
+      console.error(`  - ${err.field}: ${err.message} [${err.code}]`);
+    }
+  }
+
   return db;
 }
 
 async function saveDb(db) {
-  await writeFile(dbPath, JSON.stringify(db, null, 2));
+  try {
+    const result = await safeSave(dbPath, db, {
+      preValidate: true,
+      postValidate: true,
+      createBackup: true,
+      backupCount: DEFAULT_BACKUP_COUNT,
+    });
+    return result;
+  } catch (e) {
+    if (e instanceof DbStorageError) {
+      console.error(`[db-storage] 保存失败: ${e.message} (code=${e.code})`);
+      if (e.details) {
+        console.error(`  details:`, JSON.stringify(e.details, null, 2).slice(0, 500));
+      }
+    } else {
+      console.error(`[db-storage] 保存失败:`, e);
+    }
+    throw e;
+  }
 }
 
 function sendJson(res, status, data) {
@@ -188,6 +259,82 @@ const quantityLedgerRouter = createQuantityLedgerRouter(helpers);
 
 async function routeApi(req, res, url, method) {
   const pathname = url.pathname;
+
+  if (method === "GET" && pathname === "/api/admin/backups") {
+    try {
+      const backups = await listBackups(dbPath);
+      return sendJson(res, 200, {
+        total: backups.length,
+        backups: backups.map((b) => ({
+          name: b.name,
+          size: b.size,
+          createdAt: b.createdAt,
+          createdAtStr: new Date(b.createdAt).toLocaleString("zh-CN"),
+        })),
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (method === "POST" && pathname === "/api/admin/backups/create") {
+    try {
+      const db = await loadDb();
+      await saveDb(db);
+      const backups = await listBackups(dbPath);
+      return sendJson(res, 201, {
+        ok: true,
+        message: "备份已创建",
+        latestBackup: backups[0]
+          ? { name: backups[0].name, size: backups[0].size, createdAt: backups[0].createdAt }
+          : null,
+      });
+    } catch (e) {
+      if (e instanceof DbStorageError) {
+        return sendJson(res, 500, { error: e.message, code: e.code });
+      }
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  const restoreMatch = pathname.match(/^\/api\/admin\/backups\/restore\/([^/]+)$/);
+  if (restoreMatch && method === "POST") {
+    const backupName = decodeURIComponent(restoreMatch[1]);
+    try {
+      const backups = await listBackups(dbPath);
+      const target = backups.find((b) => b.name === backupName);
+      if (!target) {
+        return sendJson(res, 404, { error: `备份不存在: ${backupName}` });
+      }
+      const result = await restoreFromBackup(dbPath, target.path);
+      return sendJson(res, 200, {
+        ok: true,
+        message: "已从备份恢复，数据将在下次加载时生效",
+        restoredFrom: target.name,
+        hash: result.hash,
+        size: result.size,
+      });
+    } catch (e) {
+      if (e instanceof DbStorageError) {
+        return sendJson(res, 500, { error: e.message, code: e.code });
+      }
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (method === "GET" && pathname === "/api/admin/db/validate") {
+    try {
+      const db = await loadDb();
+      const result = validateStructure(db);
+      return sendJson(res, 200, result);
+    } catch (e) {
+      if (e instanceof DbStorageError) {
+        return sendJson(res, 500, { error: e.message, code: e.code });
+      }
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   const db = await loadDb();
 
   if (method === "GET" && pathname === "/api/state") {

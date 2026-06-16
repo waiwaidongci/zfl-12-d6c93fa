@@ -11,6 +11,9 @@
     "test:orders": "node test_orders.js",
     "test:stock": "node test_stock_reservation.js",
     "test:import-draft": "node test_import_draft.js",
-    "test": "npm run test:import-draft"
+    "test:storage": "node test_db_storage.js",
+    "test:storage:verbose": "VERBOSE=1 node test_db_storage.js",
+    "test": "npm run test:storage && npm run test:import-draft",
+    "test:all": "npm run test:storage && npm run test:import-draft && npm run test:inventory && npm run test:orders && npm run test:stock"
   }
 }
