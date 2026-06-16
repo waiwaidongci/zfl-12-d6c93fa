@@ -1913,6 +1913,105 @@ button.tiny {
   background: #ffeee8;
 }
 
+.auditlog-txn-item {
+  border-left: 4px solid var(--green);
+}
+
+.auditlog-txn-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 12px;
+}
+
+.auditlog-collection-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.auditlog-batch-info {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auditlog-cross-farm {
+  font-weight: 600;
+}
+
+.auditlog-txn-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.auditlog-txn-log-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f8faf9;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.txn-log-index {
+  color: var(--muted);
+  font-weight: 600;
+  min-width: 24px;
+}
+
+.txn-log-action {
+  background: var(--blue);
+  color: #fff;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.txn-log-target {
+  color: var(--muted);
+  flex: 1;
+}
+
+.txn-log-time {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.auditlog-batch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.auditlog-batch-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.auditlog-collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .lineage-toolbar {
   display: flex;
   gap: 12px;

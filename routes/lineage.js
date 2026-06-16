@@ -1,4 +1,4 @@
-import { writeLog } from "../utils/audit-log.js";
+import { writeLog, beginTxn, writeLogToTxn, commitTxn } from "../utils/audit-log.js";
 import {
   calculateBatchQuantity,
   calculateSourceComposition,
@@ -835,6 +835,17 @@ export function createLineageRouter(helpers) {
       });
 
       const farmId = input.farmId || getDefaultFarmId(db);
+
+      const sourceBatchBefore = input.sources.map((src) => {
+        const batch = db.batches.find((b) => b.id === src.batchId);
+        return batch ? { id: batch.id, estimatedCount: batch.estimatedCount, currentPool: batch.currentPool } : null;
+      }).filter(Boolean);
+
+      const targetBatchBefore = input.targets.map((tgt) => {
+        const batch = db.batches.find((b) => b.id === tgt.batchId);
+        return batch ? { id: batch.id, estimatedCount: batch.estimatedCount, currentPool: batch.currentPool } : null;
+      }).filter(Boolean);
+
       const lineage = {
         id: `LIN-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         type: input.type,
@@ -847,8 +858,32 @@ export function createLineageRouter(helpers) {
         createdAt: new Date().toISOString(),
       };
 
+      const txn = beginTxn(db, {
+        operator: input.operator || "",
+        farmId,
+        description: `${LINEAGE_TYPES[input.type] || "血缘操作"}：${input.reason || "血缘流转"}`,
+      });
+
       db.lineages.push(lineage);
 
+      writeLogToTxn(txn, db, {
+        action: "lineage_create",
+        targetType: "lineage",
+        targetId: lineage.id,
+        before: null,
+        after: lineage,
+        farmId,
+        meta: {
+          type: input.type,
+          sourceBatchIds: input.sources.map((s) => s.batchId),
+          targetBatchIds: input.targets.map((t) => t.batchId),
+          sourceBatchBeforeCounts: sourceBatchBefore.map((b) => b.estimatedCount),
+          targetBatchBeforeCounts: targetBatchBefore.map((b) => b.estimatedCount),
+          targetBatchBeforePools: targetBatchBefore.map((b) => b.currentPool),
+        },
+      });
+
+      const createdTransfers = [];
       for (const tgt of targets) {
         const tgtBatch = db.batches.find((b) => b.id === tgt.batchId);
         for (const src of sources) {
@@ -868,64 +903,89 @@ export function createLineageRouter(helpers) {
                 lineageId: lineage.id,
               };
               db.transfers.push(transfer);
+              createdTransfers.push(transfer);
             }
           }
         }
       }
 
+      if (createdTransfers.length > 0) {
+        writeLogToTxn(txn, db, {
+          action: "transfer_create",
+          targetType: "transfer",
+          targetId: createdTransfers.map((t) => t.id).join(","),
+          before: null,
+          after: createdTransfers,
+          farmId,
+          meta: { lineageId: lineage.id, count: createdTransfers.length },
+        });
+      }
+
+      const updatedBatches = [];
       if (input.type === "split") {
         const srcBatch = db.batches.find((b) => b.id === input.sources[0].batchId);
         if (srcBatch && input.sources[0].contributionCount > 0) {
+          const before = { ...srcBatch };
           srcBatch.estimatedCount = Math.max(0, srcBatch.estimatedCount - Number(input.sources[0].contributionCount));
+          updatedBatches.push({ before, after: { ...srcBatch } });
         }
         for (const tgt of input.targets) {
           const tgtBatch = db.batches.find((b) => b.id === tgt.batchId);
           if (tgtBatch && tgt.receivedCount > 0) {
+            const before = { ...tgtBatch };
             tgtBatch.estimatedCount += Number(tgt.receivedCount);
             if (tgt.toPool) tgtBatch.currentPool = tgt.toPool;
+            updatedBatches.push({ before, after: { ...tgtBatch } });
           }
         }
       } else if (input.type === "merge") {
         for (const src of input.sources) {
           const srcBatch = db.batches.find((b) => b.id === src.batchId);
           if (srcBatch && src.contributionCount > 0) {
+            const before = { ...srcBatch };
             srcBatch.estimatedCount = Math.max(0, srcBatch.estimatedCount - Number(src.contributionCount));
+            updatedBatches.push({ before, after: { ...srcBatch } });
           }
         }
         const tgtBatch = db.batches.find((b) => b.id === input.targets[0].batchId);
         if (tgtBatch) {
+          const before = { ...tgtBatch };
           tgtBatch.estimatedCount += totalTargetCount;
+          updatedBatches.push({ before, after: { ...tgtBatch } });
         }
       } else if (input.type === "mix") {
         for (const src of input.sources) {
           const srcBatch = db.batches.find((b) => b.id === src.batchId);
           if (srcBatch && src.contributionCount > 0) {
+            const before = { ...srcBatch };
             srcBatch.estimatedCount = Math.max(0, srcBatch.estimatedCount - Number(src.contributionCount));
+            updatedBatches.push({ before, after: { ...srcBatch } });
           }
         }
         for (const tgt of input.targets) {
           const tgtBatch = db.batches.find((b) => b.id === tgt.batchId);
           if (tgtBatch && tgt.receivedCount > 0) {
+            const before = { ...tgtBatch };
             tgtBatch.estimatedCount += Number(tgt.receivedCount);
             if (tgt.toPool) tgtBatch.currentPool = tgt.toPool;
+            updatedBatches.push({ before, after: { ...tgtBatch } });
           }
         }
       }
 
-      writeLog(db, {
-        operator: input.operator || "",
-        action: "lineage_create",
-        targetType: "lineage",
-        targetId: lineage.id,
-        before: null,
-        after: lineage,
-        farmId,
-        meta: {
-          type: input.type,
-          sourceBatchIds: input.sources.map((s) => s.batchId),
-          targetBatchIds: input.targets.map((t) => t.batchId),
-        },
-      });
+      if (updatedBatches.length > 0) {
+        writeLogToTxn(txn, db, {
+          action: "batch_update",
+          targetType: "batch",
+          targetId: updatedBatches.map((b) => b.after.id).join(","),
+          before: updatedBatches.map((b) => b.before),
+          after: updatedBatches.map((b) => b.after),
+          farmId,
+          meta: { lineageId: lineage.id, count: updatedBatches.length },
+        });
+      }
+
+      commitTxn(db, txn);
 
       const allRelatedBatchIds = [
         ...input.sources.map((s) => s.batchId),
@@ -949,17 +1009,143 @@ export function createLineageRouter(helpers) {
       }
 
       const lineage = db.lineages[idx];
+      lineage._originalIndex = idx;
+
+      const relatedTransfers = (db.transfers || []).filter((t) => t.lineageId === lineageId);
+      const transferOriginalIndices = relatedTransfers.map((t) => {
+        const i = db.transfers.findIndex((tr) => tr.id === t.id);
+        return { id: t.id, index: i };
+      });
+
+      const sourceBatchBefore = lineage.sources.map((src) => {
+        const batch = db.batches.find((b) => b.id === src.batchId);
+        return batch ? { id: batch.id, estimatedCount: batch.estimatedCount, currentPool: batch.currentPool } : null;
+      }).filter(Boolean);
+
+      const targetBatchBefore = lineage.targets.map((tgt) => {
+        const batch = db.batches.find((b) => b.id === tgt.batchId);
+        return batch ? { id: batch.id, estimatedCount: batch.estimatedCount, currentPool: batch.currentPool } : null;
+      }).filter(Boolean);
+
+      const txn = beginTxn(db, {
+        operator: "",
+        farmId: lineage.farmId,
+        description: `删除血缘记录：${LINEAGE_TYPES[lineage.type] || "血缘"} - ${lineage.reason || lineageId}`,
+      });
+
+      const deletedTransfers = [];
+      for (const t of relatedTransfers) {
+        const tIdx = db.transfers.findIndex((tr) => tr.id === t.id);
+        if (tIdx !== -1) {
+          const deleted = db.transfers.splice(tIdx, 1)[0];
+          deleted._originalIndex = tIdx;
+          deletedTransfers.push(deleted);
+        }
+      }
+
+      if (deletedTransfers.length > 0) {
+        writeLogToTxn(txn, db, {
+          action: "transfer_delete",
+          targetType: "transfer",
+          targetId: deletedTransfers.map((t) => t.id).join(","),
+          before: deletedTransfers,
+          after: null,
+          farmId: lineage.farmId,
+          meta: { lineageId, count: deletedTransfers.length },
+        });
+      }
+
+      const updatedBatches = [];
+      if (lineage.type === "split") {
+        const srcBatch = db.batches.find((b) => b.id === lineage.sources[0].batchId);
+        if (srcBatch && lineage.sources[0].contributionCount > 0) {
+          const before = { ...srcBatch };
+          srcBatch.estimatedCount += Number(lineage.sources[0].contributionCount);
+          updatedBatches.push({ before, after: { ...srcBatch } });
+        }
+        for (const tgt of lineage.targets) {
+          const tgtBatch = db.batches.find((b) => b.id === tgt.batchId);
+          if (tgtBatch && tgt.receivedCount > 0) {
+            const before = { ...tgtBatch };
+            tgtBatch.estimatedCount = Math.max(0, tgtBatch.estimatedCount - Number(tgt.receivedCount));
+            if (tgt.toPool) {
+              const beforePool = targetBatchBefore.find((b) => b.id === tgt.batchId);
+              if (beforePool) tgtBatch.currentPool = beforePool.currentPool;
+            }
+            updatedBatches.push({ before, after: { ...tgtBatch } });
+          }
+        }
+      } else if (lineage.type === "merge") {
+        for (const src of lineage.sources) {
+          const srcBatch = db.batches.find((b) => b.id === src.batchId);
+          if (srcBatch && src.contributionCount > 0) {
+            const before = { ...srcBatch };
+            srcBatch.estimatedCount += Number(src.contributionCount);
+            updatedBatches.push({ before, after: { ...srcBatch } });
+          }
+        }
+        const tgtBatch = db.batches.find((b) => b.id === lineage.targets[0].batchId);
+        if (tgtBatch) {
+          const totalTarget = lineage.targets.reduce((s, t) => s + Number(t.receivedCount || 0), 0);
+          const before = { ...tgtBatch };
+          tgtBatch.estimatedCount = Math.max(0, tgtBatch.estimatedCount - totalTarget);
+          updatedBatches.push({ before, after: { ...tgtBatch } });
+        }
+      } else if (lineage.type === "mix") {
+        for (const src of lineage.sources) {
+          const srcBatch = db.batches.find((b) => b.id === src.batchId);
+          if (srcBatch && src.contributionCount > 0) {
+            const before = { ...srcBatch };
+            srcBatch.estimatedCount += Number(src.contributionCount);
+            updatedBatches.push({ before, after: { ...srcBatch } });
+          }
+        }
+        for (const tgt of lineage.targets) {
+          const tgtBatch = db.batches.find((b) => b.id === tgt.batchId);
+          if (tgtBatch && tgt.receivedCount > 0) {
+            const before = { ...tgtBatch };
+            tgtBatch.estimatedCount = Math.max(0, tgtBatch.estimatedCount - Number(tgt.receivedCount));
+            if (tgt.toPool) {
+              const beforePool = targetBatchBefore.find((b) => b.id === tgt.batchId);
+              if (beforePool) tgtBatch.currentPool = beforePool.currentPool;
+            }
+            updatedBatches.push({ before, after: { ...tgtBatch } });
+          }
+        }
+      }
+
+      if (updatedBatches.length > 0) {
+        writeLogToTxn(txn, db, {
+          action: "batch_update",
+          targetType: "batch",
+          targetId: updatedBatches.map((b) => b.after.id).join(","),
+          before: updatedBatches.map((b) => b.before),
+          after: updatedBatches.map((b) => b.after),
+          farmId: lineage.farmId,
+          meta: { lineageId, count: updatedBatches.length },
+        });
+      }
+
       db.lineages.splice(idx, 1);
 
-      writeLog(db, {
-        operator: "",
+      writeLogToTxn(txn, db, {
         action: "lineage_delete",
         targetType: "lineage",
         targetId: lineageId,
         before: lineage,
         after: null,
         farmId: lineage.farmId,
+        meta: {
+          type: lineage.type,
+          sourceBatchIds: lineage.sources.map((s) => s.batchId),
+          targetBatchIds: lineage.targets.map((t) => t.batchId),
+          sourceBatchBeforeCounts: sourceBatchBefore.map((b) => b.estimatedCount),
+          targetBatchBeforeCounts: targetBatchBefore.map((b) => b.estimatedCount),
+          targetBatchBeforePools: targetBatchBefore.map((b) => b.currentPool),
+        },
       });
+
+      commitTxn(db, txn);
 
       const allRelatedBatchIds = [
         ...lineage.sources.map((s) => s.batchId),

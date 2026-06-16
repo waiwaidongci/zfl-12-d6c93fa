@@ -1,4 +1,4 @@
-import { writeLog } from "../utils/audit-log.js";
+import { writeLog, beginTxn, writeLogToTxn, commitTxn } from "../utils/audit-log.js";
 import { getBatchAvailableQuantity } from "./shipments.js";
 import { updateBatchLedgers } from "../utils/quantity-ledger.js";
 const ORDER_STATUSES = ["pending", "partial", "completed", "cancelled"];
@@ -265,15 +265,24 @@ export function createOrdersRouter(helpers) {
 
       db.orders = db.orders || [];
       db.orders.push(order);
-      writeLog(db, {
+
+      const txn = beginTxn(db, {
         operator: input.operator || "",
+        farmId,
+        description: `新增订单：${order.customerName || "客户"} - ${order.orderQuantity}尾`,
+      });
+
+      writeLogToTxn(txn, db, {
         action: "order_create",
         targetType: "order",
         targetId: order.id,
         before: null,
         after: order,
-        farmId: farmId,
+        farmId,
+        meta: { batchId: order.batchId },
       });
+
+      commitTxn(db, txn);
 
       updateBatchLedgers(db, order.batchId);
 
@@ -362,15 +371,24 @@ export function createOrdersRouter(helpers) {
 
         orders[orderIndex] = updated;
         db.orders = orders;
-        writeLog(db, {
+
+        const txn = beginTxn(db, {
           operator: input.operator || "",
+          farmId: existing.farmId,
+          description: isCancelling ? `取消订单：${existing.id}` : `修改订单：${existing.id}`,
+        });
+
+        writeLogToTxn(txn, db, {
           action: isCancelling ? "order_cancel" : "order_update",
           targetType: "order",
           targetId: existing.id,
           before: existing,
           after: orders[orderIndex],
           farmId: existing.farmId,
+          meta: { batchId: existing.batchId },
         });
+
+        commitTxn(db, txn);
 
         updateBatchLedgers(db, existing.batchId);
 
@@ -395,15 +413,24 @@ export function createOrdersRouter(helpers) {
         order._originalIndex = orderIndex;
         const [deleted] = orders.splice(orderIndex, 1);
         db.orders = orders;
-        writeLog(db, {
+
+        const txn = beginTxn(db, {
           operator: "",
+          farmId: order.farmId,
+          description: `删除订单：${order.id}`,
+        });
+
+        writeLogToTxn(txn, db, {
           action: "order_delete",
           targetType: "order",
           targetId: orderId,
           before: order,
           after: null,
           farmId: order.farmId,
+          meta: { batchId: order.batchId },
         });
+
+        commitTxn(db, txn);
 
         updateBatchLedgers(db, order.batchId);
 

@@ -94,7 +94,7 @@ const forms = {
   farm:
     '<h2>场区管理</h2><div class="farm-toolbar"><div class="spacer"></div><button type="button" id="addFarmBtn">+ 新增场区</button></div><div class="farm-stats" id="farmStats"></div><div class="grid" id="farmList"></div>',
   auditlog:
-    '<h2>操作日志</h2><div class="auditlog-toolbar"><select id="auditlogActionFilter"><option value="">全部操作</option></select><select id="auditlogTargetFilter"><option value="">全部对象</option></select><input id="auditlogOperatorSearch" placeholder="操作者..."><input id="auditlogStartDate" type="date" placeholder="开始日期"><input id="auditlogEndDate" type="date" placeholder="结束日期"><div class="spacer"></div><button type="button" id="auditlogRollbackBtn" class="secondary" style="background:#a84e35;color:#fff;">↩ 撤销最近操作</button></div><div class="auditlog-stats" id="auditlogStats"></div><div class="auditlog-list" id="auditlogList"></div><div class="auditlog-pagination" id="auditlogPagination"></div>',
+    '<h2>操作日志</h2><div class="auditlog-toolbar"><select id="auditlogActionFilter"><option value="">全部操作</option></select><select id="auditlogTargetFilter"><option value="">全部对象</option></select><input id="auditlogOperatorSearch" placeholder="操作者..."><input id="auditlogStartDate" type="date" placeholder="开始日期"><input id="auditlogEndDate" type="date" placeholder="结束日期"><div class="spacer"></div><button type="button" id="auditlogViewToggle" class="secondary">📋 详细视图</button><button type="button" id="auditlogRollbackBtn" class="secondary" style="background:#a84e35;color:#fff;">↩ 撤销最近操作</button></div><div class="auditlog-stats" id="auditlogStats"></div><div class="auditlog-list" id="auditlogList"></div><div class="auditlog-pagination" id="auditlogPagination"></div>',
   lineage:
     '<h2>批次血缘追踪</h2><div class="lineage-toolbar"><select id="lineageTypeFilter"><option value="">全部类型</option><option value="split">批次拆分</option><option value="merge">批次合并</option><option value="mix">混养分配</option></select><select id="lineageBatchFilter"><option value="">全部批次</option></select><div class="spacer"></div><button type="button" id="addLineageBtn">+ 新增血缘</button></div><div class="lineage-stats" id="lineageStats"></div><div class="lineage-list" id="lineageList"></div>',
   overview:
@@ -3270,9 +3270,11 @@ let dataioPendingRecords = [];
 let dataioCurrentDraft = null;
 let dataioDraftMode = "preview";
 let auditlogPage = 1;
+let auditlogViewMode = "transaction";
 
 const ACTION_LABELS_MAP = {
   batch_create: "新建批次",
+  batch_update: "更新批次",
   record_create: "新增每日记录",
   record_update: "修改每日记录",
   record_delete: "删除每日记录",
@@ -3281,6 +3283,7 @@ const ACTION_LABELS_MAP = {
   cost_create: "新增成本",
   cost_update: "修改成本",
   cost_delete: "删除成本",
+  warning_create: "新增预警",
   warning_handle: "预警处理",
   warning_delete: "删除预警",
   threshold_update: "阈值配置",
@@ -3339,19 +3342,25 @@ async function renderAuditLogs() {
   const endDate = document.getElementById("auditlogEndDate")?.value || "";
   const farmId = getEffectiveFarmId();
 
+  const viewToggleBtn = document.getElementById("auditlogViewToggle");
+  if (viewToggleBtn) {
+    viewToggleBtn.textContent = auditlogViewMode === "transaction" ? "📋 详细视图" : "🔗 事务视图";
+  }
+
   const params = new URLSearchParams();
   if (farmId) params.set("farmId", farmId);
   if (actionFilter) params.set("action", actionFilter);
-  if (targetFilter) params.set("targetType", targetFilter);
+  if (targetFilter && auditlogViewMode === "detail") params.set("targetType", targetFilter);
   if (operatorSearch) params.set("operator", operatorSearch);
   if (startDate) params.set("startDate", startDate);
   if (endDate) params.set("endDate", endDate);
   params.set("page", auditlogPage);
-  params.set("pageSize", "30");
+  params.set("pageSize", auditlogViewMode === "transaction" ? "20" : "30");
 
   let result;
   try {
-    result = await api("/api/audit-logs?" + params.toString());
+    const endpoint = auditlogViewMode === "transaction" ? "/api/audit-transactions" : "/api/audit-logs";
+    result = await api(endpoint + "?" + params.toString());
   } catch (err) {
     document.getElementById("auditlogList").innerHTML = `<div class="meta" style="padding:24px;text-align:center;color:#a84e35;">加载失败：${err.message}</div>`;
     return;
@@ -3380,7 +3389,9 @@ async function renderAuditLogs() {
   if (rollbackBtn) {
     if (result.latestRollbackable) {
       rollbackBtn.disabled = false;
-      rollbackBtn.textContent = `↩ 撤销: ${ACTION_LABELS_MAP[result.latestRollbackable.action] || result.latestRollbackable.action}(${result.latestRollbackable.targetId || ""}) - ${result.latestRollbackable.operator}`;
+      const actionLabel = ACTION_LABELS_MAP[result.latestRollbackable.action] || result.latestRollbackable.action;
+      const targetId = result.latestRollbackable.targetId || "";
+      rollbackBtn.textContent = `↩ 撤销: ${actionLabel}(${targetId}) - ${result.latestRollbackable.operator}`;
     } else {
       rollbackBtn.disabled = true;
       rollbackBtn.textContent = "↩ 无可撤销操作";
@@ -3389,10 +3400,16 @@ async function renderAuditLogs() {
 
   const stats = document.getElementById("auditlogStats");
   if (stats) {
-    stats.innerHTML = [
-      ["日志总数", result.total],
-      ["当前页", `${result.page}/${result.totalPages || 1}`],
-    ].map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join("");
+    const statItems = auditlogViewMode === "transaction"
+      ? [
+          ["事务/操作数", result.total],
+          ["当前页", `${result.page}/${result.totalPages || 1}`],
+        ]
+      : [
+          ["日志总数", result.total],
+          ["当前页", `${result.page}/${result.totalPages || 1}`],
+        ];
+    stats.innerHTML = statItems.map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join("");
   }
 
   const list = document.getElementById("auditlogList");
@@ -3402,42 +3419,159 @@ async function renderAuditLogs() {
     return;
   }
 
-  list.innerHTML = result.items.map((log) => {
-    const actionLabel = log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action;
-    const targetLabel = log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType;
-    const time = new Date(log.createdAt).toLocaleString("zh-CN");
-    const rolledBackClass = log.rolledBack ? " auditlog-rolled-back" : "";
-    const isRollback = log.action === "rollback";
+  if (auditlogViewMode === "transaction") {
+    list.innerHTML = result.items.map((item) => renderTransactionListItem(item)).join("");
+    bindTransactionListEvents(list);
+  } else {
+    list.innerHTML = result.items.map((log) => renderLogListItem(log)).join("");
+    bindLogListEvents(list);
+  }
 
-    let detailHtml = "";
-    if (log.before && log.after) {
-      detailHtml = `<div class="auditlog-diff"><span class="label">变更前：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span><span class="label" style="margin-left:8px;">变更后：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
-    } else if (log.after && !log.before) {
-      detailHtml = `<div class="auditlog-diff"><span class="label">新增数据：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
-    } else if (log.before && !log.after) {
-      detailHtml = `<div class="auditlog-diff"><span class="label">删除数据：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span></div>`;
-    }
-    if (log.meta) {
-      const metaStr = Object.entries(log.meta).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
-      detailHtml += `<div class="auditlog-meta"><span class="label">附加信息：</span>${metaStr}</div>`;
-    }
+  const pagination = document.getElementById("auditlogPagination");
+  if (result.totalPages > 1) {
+    let html = "";
+    if (result.page > 1) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page - 1}">上一页</button>`;
+    html += `<span class="auditlog-page-info">${result.page} / ${result.totalPages}</span>`;
+    if (result.page < result.totalPages) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page + 1}">下一页</button>`;
+    pagination.innerHTML = html;
+    pagination.querySelectorAll(".auditlog-page-btn").forEach((btn) => {
+      btn.onclick = () => {
+        auditlogPage = Number(btn.dataset.page);
+        renderAuditLogs();
+      };
+    });
+  } else {
+    pagination.innerHTML = "";
+  }
+}
 
-    return `
-      <div class="auditlog-item${rolledBackClass}${isRollback ? " auditlog-rollback" : ""}" data-log-id="${log.id}" data-rollbackable="${log.rollbackable}">
-        <div class="auditlog-header">
-          <span class="auditlog-action${isRollback ? " action-rollback" : ""}">${actionLabel}</span>
-          <span class="auditlog-target">${targetLabel}${log.targetId ? " #" + log.targetId : ""}</span>
-          <span class="auditlog-operator">${log.operator || "系统"}</span>
-          <span class="auditlog-time">${time}</span>
-          ${log.rolledBack ? '<span class="status-badge status-maintenance">已撤销</span>' : ""}
-          ${log.rollbackable ? '<button type="button" class="tiny-btn auditlog-rollback-item-btn" data-action="rollback-item">撤销</button>' : ""}
-          <button type="button" class="tiny-btn" data-action="detail">详情</button>
-        </div>
-        ${detailHtml}
+function renderTransactionListItem(item) {
+  const time = new Date(item.createdAt).toLocaleString("zh-CN");
+  const isRollback = item.firstAction === "rollback";
+  const isTxn = item.isTransaction;
+
+  let collectionsHtml = "";
+  if (item.affectedCollections && Object.keys(item.affectedCollections).length > 0) {
+    collectionsHtml = Object.entries(item.affectedCollections)
+      .map(([type, count]) => {
+        const label = TARGET_LABELS_MAP[type] || type;
+        return `<span class="auditlog-collection-tag">${label} ×${count}</span>`;
+      })
+      .join("");
+  }
+
+  let batchInfo = "";
+  if (item.affectedBatchCount > 0) {
+    const batchIds = item.affectedBatchIds || [];
+    const displayBatches = batchIds.slice(0, 3).join(", ");
+    const more = batchIds.length > 3 ? ` 等${batchIds.length}个` : "";
+    batchInfo = `<span class="auditlog-batch-info">批次: ${displayBatches}${more}</span>`;
+  }
+
+  const title = isTxn ? item.description : (item.actionLabel || item.firstActionLabel || item.action);
+  const subtitle = isTxn
+    ? `${item.totalEntries} 条变更`
+    : (item.targetLabel || TARGET_LABELS_MAP[item.targetType] || item.targetType) + (item.targetId ? " #" + item.targetId : "");
+
+  return `
+    <div class="auditlog-item auditlog-txn-item${isRollback ? " auditlog-rollback" : ""}" 
+         data-txn-id="${item.txnId || ""}" 
+         data-log-id="${item.logId || ""}"
+         data-rollbackable="${item.rollbackable}"
+         data-is-txn="${isTxn}">
+      <div class="auditlog-header">
+        <span class="auditlog-action${isRollback ? " action-rollback" : ""}">
+          ${isTxn ? "🔗 " : ""}${title}
+        </span>
+        <span class="auditlog-target">${subtitle}</span>
+        <span class="auditlog-operator">${item.operator || "系统"}</span>
+        <span class="auditlog-time">${time}</span>
+        ${item.rollbackable ? '<button type="button" class="tiny-btn auditlog-rollback-item-btn" data-action="rollback-item">撤销</button>' : ""}
+        <button type="button" class="tiny-btn" data-action="detail">详情</button>
       </div>
-    `;
-  }).join("");
+      <div class="auditlog-txn-summary">
+        ${collectionsHtml}
+        ${batchInfo}
+        ${item.crossFarm ? '<span class="auditlog-cross-farm" style="color:#a84e35;">⚠ 跨场区</span>' : ""}
+      </div>
+    </div>
+  `;
+}
 
+function renderLogListItem(log) {
+  const actionLabel = log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action;
+  const targetLabel = log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType;
+  const time = new Date(log.createdAt).toLocaleString("zh-CN");
+  const rolledBackClass = log.rolledBack ? " auditlog-rolled-back" : "";
+  const isRollback = log.action === "rollback";
+
+  let detailHtml = "";
+  if (log.before && log.after) {
+    detailHtml = `<div class="auditlog-diff"><span class="label">变更前：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span><span class="label" style="margin-left:8px;">变更后：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
+  } else if (log.after && !log.before) {
+    detailHtml = `<div class="auditlog-diff"><span class="label">新增数据：</span><span class="auditlog-diff-after">${formatLogData(log.after)}</span></div>`;
+  } else if (log.before && !log.after) {
+    detailHtml = `<div class="auditlog-diff"><span class="label">删除数据：</span><span class="auditlog-diff-before">${formatLogData(log.before)}</span></div>`;
+  }
+  if (log.meta) {
+    const metaStr = Object.entries(log.meta).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
+    detailHtml += `<div class="auditlog-meta"><span class="label">附加信息：</span>${metaStr}</div>`;
+  }
+
+  return `
+    <div class="auditlog-item${rolledBackClass}${isRollback ? " auditlog-rollback" : ""}" data-log-id="${log.id}" data-rollbackable="${log.rollbackable}">
+      <div class="auditlog-header">
+        <span class="auditlog-action${isRollback ? " action-rollback" : ""}">${actionLabel}</span>
+        <span class="auditlog-target">${targetLabel}${log.targetId ? " #" + log.targetId : ""}</span>
+        <span class="auditlog-operator">${log.operator || "系统"}</span>
+        <span class="auditlog-time">${time}</span>
+        ${log.rolledBack ? '<span class="status-badge status-maintenance">已撤销</span>' : ""}
+        ${log.rollbackable ? '<button type="button" class="tiny-btn auditlog-rollback-item-btn" data-action="rollback-item">撤销</button>' : ""}
+        <button type="button" class="tiny-btn" data-action="detail">详情</button>
+      </div>
+      ${detailHtml}
+    </div>
+  `;
+}
+
+function bindTransactionListEvents(list) {
+  list.querySelectorAll(".auditlog-txn-item").forEach((item) => {
+    const txnId = item.dataset.txnId;
+    const logId = item.dataset.logId;
+    const isTxn = item.dataset.isTxn === "true";
+    const detailBtn = item.querySelector('[data-action="detail"]');
+    const rollbackItemBtn = item.querySelector('[data-action="rollback-item"]');
+
+    if (detailBtn) {
+      detailBtn.onclick = async (e) => {
+        e.preventDefault();
+        try {
+          if (isTxn) {
+            const detail = await api("/api/audit-transactions/" + encodeURIComponent(txnId));
+            openTransactionDetailModal(detail);
+          } else {
+            const detail = await api("/api/audit-logs/" + logId);
+            openAuditLogDetailModal(detail);
+          }
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+    }
+    if (rollbackItemBtn) {
+      rollbackItemBtn.onclick = (e) => {
+        e.preventDefault();
+        if (isTxn) {
+          openRollbackConfirmModal(txnId, true);
+        } else {
+          openRollbackConfirmModal(logId, false);
+        }
+      };
+    }
+  });
+}
+
+function bindLogListEvents(list) {
   list.querySelectorAll(".auditlog-item").forEach((item) => {
     const logId = item.dataset.logId;
     const detailBtn = item.querySelector('[data-action="detail"]');
@@ -3456,27 +3590,10 @@ async function renderAuditLogs() {
     if (rollbackItemBtn) {
       rollbackItemBtn.onclick = (e) => {
         e.preventDefault();
-        openRollbackConfirmModal(logId);
+        openRollbackConfirmModal(logId, false);
       };
     }
   });
-
-  const pagination = document.getElementById("auditlogPagination");
-  if (result.totalPages > 1) {
-    let html = "";
-    if (result.page > 1) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page - 1}">上一页</button>`;
-    html += `<span class="auditlog-page-info">${result.page} / ${result.totalPages}</span>`;
-    if (result.page < result.totalPages) html += `<button type="button" class="auditlog-page-btn" data-page="${result.page + 1}">下一页</button>`;
-    pagination.innerHTML = html;
-    pagination.querySelectorAll(".auditlog-page-btn").forEach((btn) => {
-      btn.onclick = () => {
-        auditlogPage = Number(btn.dataset.page);
-        renderAuditLogs();
-      };
-    });
-  } else {
-    pagination.innerHTML = "";
-  }
 }
 
 function formatLogData(data) {
@@ -3504,6 +3621,8 @@ function openAuditLogDetailModal(log) {
   const afterJson = log.after ? JSON.stringify(log.after, null, 2) : "无";
   const metaJson = log.meta ? JSON.stringify(log.meta, null, 2) : "无";
   const rollbackReason = log.rollbackReason || "";
+  const isTxn = !!log.txnId;
+
   modal.innerHTML = `
     <div class="modal modal-wide">
       <h2>操作日志详情</h2>
@@ -3511,6 +3630,7 @@ function openAuditLogDetailModal(log) {
         <div class="detail-section">
           <h3>基本信息</h3>
           <div class="detail-row"><span class="label">日志ID</span><span>${log.id}</span></div>
+          ${log.txnId ? `<div class="detail-row"><span class="label">事务ID</span><span>${log.txnId}</span></div>` : ""}
           <div class="detail-row"><span class="label">操作类型</span><span>${log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action}</span></div>
           <div class="detail-row"><span class="label">操作对象</span><span>${log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType} ${log.targetId ? "#" + log.targetId : ""}</span></div>
           <div class="detail-row"><span class="label">操作者</span><span>${log.operator || "系统"}</span></div>
@@ -3521,6 +3641,7 @@ function openAuditLogDetailModal(log) {
           ${rollbackReason ? `<div class="detail-row"><span class="label">不可撤销原因</span><span style="color:#a84e35;">${rollbackReason}</span></div>` : ""}
         </div>
       </div>
+      ${log.txnSummary ? renderTxnSummarySection(log.txnSummary) : ""}
       <div class="detail-section">
         <h3>变更前数据</h3>
         <pre class="auditlog-json">${beforeJson}</pre>
@@ -3530,6 +3651,21 @@ function openAuditLogDetailModal(log) {
         <pre class="auditlog-json">${afterJson}</pre>
       </div>
       ${log.meta ? `<div class="detail-section"><h3>附加信息</h3><pre class="auditlog-json">${metaJson}</pre></div>` : ""}
+      ${log.txnLogs && log.txnLogs.length > 1 ? `
+        <div class="detail-section">
+          <h3>事务内其他变更 (${log.txnLogs.length} 条)</h3>
+          <div class="auditlog-txn-logs">
+            ${log.txnLogs.map((l, i) => `
+              <div class="auditlog-txn-log-item">
+                <span class="txn-log-index">${i + 1}.</span>
+                <span class="txn-log-action">${l.actionLabel || ACTION_LABELS_MAP[l.action] || l.action}</span>
+                <span class="txn-log-target">${l.targetLabel || TARGET_LABELS_MAP[l.targetType] || l.targetType} ${l.targetId ? "#" + l.targetId : ""}</span>
+                <span class="txn-log-time">${new Date(l.createdAt).toLocaleString("zh-CN")}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
       <div class="modal-actions">
         <button type="button" class="secondary" id="closeBtn">关闭</button>
         ${log.rollbackable ? '<button type="button" id="rollbackDetailBtn" style="background:#a84e35;color:#fff;">撤销此操作</button>' : ""}
@@ -3542,19 +3678,121 @@ function openAuditLogDetailModal(log) {
   if (modal.querySelector("#rollbackDetailBtn")) {
     modal.querySelector("#rollbackDetailBtn").onclick = () => {
       modal.remove();
-      openRollbackConfirmModal(log.id);
+      openRollbackConfirmModal(log.txnId || log.id, isTxn);
     };
   }
 }
 
-function openRollbackConfirmModal(logId) {
+function renderTxnSummarySection(summary) {
+  if (!summary) return "";
+  const collectionsHtml = Object.entries(summary.affectedCollections || {})
+    .map(([type, count]) => {
+      const label = TARGET_LABELS_MAP[type] || type;
+      return `<span class="auditlog-collection-tag">${label} ×${count}</span>`;
+    })
+    .join("");
+  const batchCount = (summary.affectedBatchIds || []).length;
+  const batchHtml = batchCount > 0
+    ? `<div style="margin-top:8px;"><span class="label">影响批次：</span>${summary.affectedBatchIds.slice(0, 5).join(", ")}${batchCount > 5 ? ` 等${batchCount}个` : ""}</div>`
+    : "";
+  return `
+    <div class="detail-section">
+      <h3>事务摘要</h3>
+      <div class="detail-row"><span class="label">事务ID</span><span>${summary.txnId || "-"}</span></div>
+      <div class="detail-row"><span class="label">描述</span><span>${summary.description || "-"}</span></div>
+      <div class="detail-row"><span class="label">变更总数</span><span>${summary.totalEntries || 0} 条</span></div>
+      <div style="margin-top:8px;">
+        <span class="label">影响集合：</span>
+        ${collectionsHtml || "-"}
+      </div>
+      ${batchHtml}
+      ${summary.crossFarm ? '<div style="margin-top:8px;color:#a84e35;"><span class="label">跨场区：</span>是（禁止回滚）</div>' : ""}
+    </div>
+  `;
+}
+
+function openTransactionDetailModal(txn) {
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
+  const rollbackReason = txn.rollbackReason || "";
+
+  modal.innerHTML = `
+    <div class="modal modal-wide">
+      <h2>事务详情</h2>
+      <div class="detail-grid">
+        <div class="detail-section">
+          <h3>基本信息</h3>
+          <div class="detail-row"><span class="label">事务ID</span><span>${txn.txnId}</span></div>
+          <div class="detail-row"><span class="label">描述</span><span>${txn.description || "-"}</span></div>
+          <div class="detail-row"><span class="label">操作者</span><span>${txn.operator || "系统"}</span></div>
+          <div class="detail-row"><span class="label">时间</span><span>${new Date(txn.createdAt).toLocaleString("zh-CN")}</span></div>
+          <div class="detail-row"><span class="label">场区</span><span>${txn.farmId || "-"}</span></div>
+          <div class="detail-row"><span class="label">变更总数</span><span>${txn.totalEntries || 0} 条</span></div>
+          <div class="detail-row"><span class="label">可撤销</span><span style="color:${txn.rollbackable ? 'var(--blue)' : '#a84e35'};">${txn.rollbackable ? "是" : "否"}</span></div>
+          ${rollbackReason ? `<div class="detail-row"><span class="label">不可撤销原因</span><span style="color:#a84e35;">${rollbackReason}</span></div>` : ""}
+        </div>
+        <div class="detail-section">
+          <h3>影响集合</h3>
+          <div class="auditlog-collection-list">
+            ${Object.entries(txn.affectedCollections || {}).map(([type, count]) => {
+              const label = TARGET_LABELS_MAP[type] || type;
+              return `<div class="detail-row"><span class="label">${label}</span><span>${count} 条</span></div>`;
+            }).join("")}
+          </div>
+          ${txn.affectedBatchCount > 0 ? `
+            <h3 style="margin-top:12px;">影响批次 (${txn.affectedBatchCount} 个)</h3>
+            <div class="auditlog-batch-list">
+              ${(txn.affectedBatchIds || []).slice(0, 10).map(id => `<span class="auditlog-batch-tag">${id}</span>`).join("")}
+              ${txn.affectedBatchCount > 10 ? `<span class="meta">... 等${txn.affectedBatchCount} 个</span>` : ""}
+            </div>
+          ` : ""}
+          ${txn.crossFarm ? '<div style="margin-top:12px;color:#a84e35;"><strong>⚠ 跨场区事务，禁止回滚</strong></div>' : ""}
+        </div>
+      </div>
+      <div class="detail-section">
+        <h3>变更记录 (${txn.logs?.length || 0} 条)</h3>
+        <div class="auditlog-txn-logs">
+          ${(txn.logs || []).map((log, i) => `
+            <div class="auditlog-txn-log-item">
+              <span class="txn-log-index">${i + 1}.</span>
+              <span class="txn-log-action">${log.actionLabel || ACTION_LABELS_MAP[log.action] || log.action}</span>
+              <span class="txn-log-target">${log.targetLabel || TARGET_LABELS_MAP[log.targetType] || log.targetType} ${log.targetId ? "#" + log.targetId : ""}</span>
+              <span class="txn-log-time">${new Date(log.createdAt).toLocaleString("zh-CN")}</span>
+              ${log.rolledBack ? '<span class="status-badge status-maintenance" style="font-size:11px;">已撤销</span>' : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="closeBtn">关闭</button>
+        ${txn.rollbackable ? '<button type="button" id="rollbackDetailBtn" style="background:#a84e35;color:#fff;">撤销此事务</button>' : ""}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#closeBtn").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  if (modal.querySelector("#rollbackDetailBtn")) {
+    modal.querySelector("#rollbackDetailBtn").onclick = () => {
+      modal.remove();
+      openRollbackConfirmModal(txn.txnId, true);
+    };
+  }
+}
+
+function openRollbackConfirmModal(id, isTransaction) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  const title = isTransaction ? "确认撤销事务" : "确认撤销操作";
+  const desc = isTransaction
+    ? "撤销整个事务包含的所有数据变更将被回滚，数据将恢复到事务执行前的状态。"
+    : "撤销操作将恢复数据到操作前的状态。";
+
   modal.innerHTML = `
     <div class="modal">
-      <h2>确认撤销操作</h2>
+      <h2>${title}</h2>
       <div class="warning-handle-summary" style="background:#fff3f0;padding:12px;border-radius:6px;margin-bottom:12px;">
-        <p style="margin:0 0 6px;color:#a84e35;"><strong>⚠ 注意：撤销操作将恢复数据到操作前的状态</strong></p>
+        <p style="margin:0 0 6px;color:#a84e35;"><strong>⚠ 注意：${desc}</strong></p>
         <p style="margin:0;font-size:13px;">此操作不可逆，撤销后原操作将被标记为已撤销。仅可撤销最近24小时内的操作。</p>
       </div>
       <form id="rollbackForm">
@@ -3574,10 +3812,18 @@ function openRollbackConfirmModal(logId) {
     ev.preventDefault();
     const data = Object.fromEntries(new FormData(ev.target).entries());
     try {
-      const result = await api("/api/audit-logs/" + logId + "/rollback", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      let result;
+      if (isTransaction) {
+        result = await api("/api/audit-transactions/" + encodeURIComponent(id) + "/rollback", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+      } else {
+        result = await api("/api/audit-logs/" + id + "/rollback", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+      }
       modal.remove();
       alert(result.message);
       await load();
@@ -3595,6 +3841,7 @@ function bindAuditLogEvents() {
   const startDate = document.getElementById("auditlogStartDate");
   const endDate = document.getElementById("auditlogEndDate");
   const rollbackBtn = document.getElementById("auditlogRollbackBtn");
+  const viewToggleBtn = document.getElementById("auditlogViewToggle");
 
   const filterChange = () => {
     auditlogPage = 1;
@@ -3607,6 +3854,14 @@ function bindAuditLogEvents() {
   if (startDate) startDate.onchange = filterChange;
   if (endDate) endDate.onchange = filterChange;
 
+  if (viewToggleBtn) {
+    viewToggleBtn.onclick = () => {
+      auditlogViewMode = auditlogViewMode === "transaction" ? "detail" : "transaction";
+      auditlogPage = 1;
+      renderAuditLogs();
+    };
+  }
+
   if (rollbackBtn) {
     rollbackBtn.onclick = async () => {
       try {
@@ -3617,7 +3872,8 @@ function bindAuditLogEvents() {
           alert("当前无可撤销的操作");
           return;
         }
-        openRollbackConfirmModal(result.log.id);
+        const isTxn = !!result.log.txnId;
+        openRollbackConfirmModal(result.log.txnId || result.log.id, isTxn);
       } catch (err) {
         alert(err.message);
       }
@@ -4437,6 +4693,71 @@ async function openDataIoDraft(draftId) {
   }
 }
 
+function confirmImportTransaction({ recordCount, batchCount, batchPreview, mode }) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  const modeText = mode === "draft" ? "草稿确认导入" : "快速导入";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>确认导入 - 事务摘要</h2>
+      <div style="background:#e8f5e9;padding:14px;border-radius:8px;margin-bottom:16px;">
+        <p style="margin:0 0 10px;color:#2e7d32;font-weight:600;">🔗 本次导入将作为一个完整事务提交</p>
+        <p style="margin:0;font-size:13px;color:var(--muted);">所有数据变更将被归为同一个事务，可在「操作日志」中查看详情或在24小时内整体撤销。</p>
+      </div>
+      <div class="detail-grid" style="margin-bottom:16px;">
+        <div class="detail-section">
+          <h3>影响集合</h3>
+          <div class="detail-row"><span class="label">每日记录</span><span style="color:var(--green);font-weight:600;">+${recordCount} 条</span></div>
+          <div class="detail-row"><span class="label">预警（自动生成）</span><span style="color:var(--muted);">根据阈值检测</span></div>
+          ${mode === "draft" ? '<div class="detail-row"><span class="label">导入草稿</span><span style="color:var(--warn);">-1 个</span></div>' : ""}
+        </div>
+        <div class="detail-section">
+          <h3>影响范围</h3>
+          <div class="detail-row"><span class="label">涉及批次</span><span>${batchCount} 个</span></div>
+          <div class="detail-row"><span class="label">批次列表</span><span style="font-size:12px;color:var(--muted);">${batchPreview}</span></div>
+          <div class="detail-row"><span class="label">回滚窗口</span><span>24 小时</span></div>
+        </div>
+      </div>
+      <div class="warning-handle-summary" style="background:#fff3f0;padding:12px;border-radius:6px;margin-bottom:16px;">
+        <p style="margin:0 0 6px;color:#a84e35;"><strong>⚠ 注意事项</strong></p>
+        <ul style="margin:0;padding-left:20px;font-size:12px;color:var(--muted);">
+          <li>导入后可在「操作日志」中找到该事务并撤销</li>
+          <li>撤销将回滚所有相关数据变更（记录、预警等）</li>
+          <li>超过24小时的事务无法撤销</li>
+          <li>若数据已被后续操作覆盖，则无法撤销</li>
+        </ul>
+      </div>
+      <form id="importConfirmForm">
+        <label>操作者姓名（选填）</label>
+        <input name="operator" placeholder="输入您的姓名，将记录在操作日志中">
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancelBtn">取消</button>
+          <button type="submit" style="background:var(--green);color:#fff;">确认导入</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  return new Promise((resolve) => {
+    modal.querySelector("#cancelBtn").onclick = () => {
+      modal.remove();
+      resolve(false);
+    };
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.remove();
+        resolve(false);
+      }
+    };
+    modal.querySelector("#importConfirmForm").onsubmit = (ev) => {
+      ev.preventDefault();
+      modal.remove();
+      resolve(true);
+    };
+  });
+}
+
 function renderDataIoDraftDetail(draft) {
   const previewResult = document.getElementById("dataioPreviewResult");
   previewResult.classList.remove("hidden");
@@ -4562,7 +4883,19 @@ function renderDataIoDraftDetail(draft) {
         alert("草稿中仍有错误行，请先修正全部错误行后再确认导入。");
         return;
       }
-      if (!confirm(`确定要导入 ${draft.validCount} 条有效记录吗？导入后草稿将被删除，数据将写入正式记录。`)) return;
+
+      const batchIds = [...new Set((draft.rows || []).filter(r => r.valid).map(r => r.batchId))];
+      const batchCount = batchIds.length;
+      const batchPreview = batchIds.slice(0, 5).join(", ") + (batchCount > 5 ? ` 等${batchCount}个` : "");
+
+      const confirmed = await confirmImportTransaction({
+        recordCount: draft.validCount,
+        batchCount,
+        batchPreview,
+        mode: "draft",
+      });
+      if (!confirmed) return;
+
       confirmBtn.disabled = true;
       confirmBtn.textContent = "导入中...";
       try {
@@ -4575,7 +4908,11 @@ function renderDataIoDraftDetail(draft) {
         if (importResult.skippedCount > 0) {
           msg += "<div style='margin-top:8px;font-size:12px;'>跳过详情：" + importResult.skipped.map((s) => s.batchId + " " + s.date + "（" + s.reason + "）").join("；") + "</div>";
         }
-        msg += `<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button><button type="button" id="dataioBackToDraftListBtn" class="secondary">返回草稿列表</button></div></div>`;
+        msg += `<div style='margin-top:10px;padding:10px;background:#e8f5e9;border-radius:6px;font-size:12px;'>
+          <strong style='color:#2e7d32;'>✅ 事务提交成功</strong>
+          <div style='margin-top:4px;color:var(--muted);'>本次导入作为一个完整事务，可在「操作日志」中查看详情或在24小时内撤销。</div>
+        </div>`;
+        msg += `<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button><button type="button" id="dataioGoAuditLogBtn" class="secondary">查看操作日志 →</button><button type="button" id="dataioBackToDraftListBtn" class="secondary">返回草稿列表</button></div></div>`;
         previewResult.innerHTML = msg;
         document.getElementById("dataioFileInput").value = "";
         document.getElementById("dataioPreviewBtn").disabled = true;
@@ -4583,6 +4920,8 @@ function renderDataIoDraftDetail(draft) {
         await loadDataIoDraftList();
         const goBtn = document.getElementById("dataioGoRecordBtn");
         if (goBtn) goBtn.onclick = () => setTab("record");
+        const goAuditBtn = document.getElementById("dataioGoAuditLogBtn");
+        if (goAuditBtn) goAuditBtn.onclick = () => setTab("auditlog");
         const backToListBtn = document.getElementById("dataioBackToDraftListBtn");
         if (backToListBtn) backToListBtn.onclick = () => previewResult.classList.add("hidden");
       } catch (err) {
@@ -4745,6 +5084,18 @@ function renderDataIoPreviewQuickMode(result) {
 
   if (confirmBtn) {
     confirmBtn.onclick = async () => {
+      const batchIds = [...new Set(dataioPendingRecords.map(r => r.batchId))];
+      const batchCount = batchIds.length;
+      const batchPreview = batchIds.slice(0, 5).join(", ") + (batchCount > 5 ? ` 等${batchCount}个` : "");
+
+      const confirmed = await confirmImportTransaction({
+        recordCount: dataioPendingRecords.length,
+        batchCount,
+        batchPreview,
+        mode: "quick",
+      });
+      if (!confirmed) return;
+
       confirmBtn.disabled = true;
       confirmBtn.textContent = "导入中...";
       try {
@@ -4757,13 +5108,19 @@ function renderDataIoPreviewQuickMode(result) {
         if (importResult.skippedCount > 0) {
           msg += "<div style='margin-top:8px;font-size:12px;'>跳过详情：" + importResult.skipped.map((s) => s.batchId + " " + s.date + "（" + s.reason + "）").join("；") + "</div>";
         }
-        msg += `<div style='margin-top:10px;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button></div></div>`;
+        msg += `<div style='margin-top:10px;padding:10px;background:#e8f5e9;border-radius:6px;font-size:12px;'>
+          <strong style='color:#2e7d32;'>✅ 事务提交成功</strong>
+          <div style='margin-top:4px;color:var(--muted);'>本次导入作为一个完整事务，可在「操作日志」中查看详情或在24小时内撤销。</div>
+        </div>`;
+        msg += `<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;'><button type="button" id="dataioGoRecordBtn" class="dataio-cancel-btn">去「每日记录」查看 →</button><button type="button" id="dataioGoAuditLogBtn" class="secondary">查看操作日志 →</button></div></div>`;
         previewResult.innerHTML = msg;
         document.getElementById("dataioFileInput").value = "";
         document.getElementById("dataioPreviewBtn").disabled = true;
         await load();
         const goBtn = document.getElementById("dataioGoRecordBtn");
         if (goBtn) goBtn.onclick = () => setTab("record");
+        const goAuditBtn = document.getElementById("dataioGoAuditLogBtn");
+        if (goAuditBtn) goAuditBtn.onclick = () => setTab("auditlog");
       } catch (err) {
         confirmBtn.disabled = false;
         confirmBtn.textContent = "确认导入";

@@ -15,7 +15,7 @@ import {
 } from "../utils/csv.js";
 import { generateWarningsFromRecord } from "./warnings.js";
 import { DEFAULT_FARM_ID, getDefaultFarm } from "./farms.js";
-import { writeLog } from "../utils/audit-log.js";
+import { writeLog, beginTxn, writeLogToTxn, commitTxn } from "../utils/audit-log.js";
 
 function getFarmIdFromQuery(url) {
   if (!url) return null;
@@ -429,8 +429,16 @@ export function createDataIoRouter(helpers) {
       }
 
       if (imported.length > 0) {
-        writeLog(db, {
+        const txn = beginTxn(db, {
           operator,
+          farmId: draft.farmId,
+          description: `导入每日记录 ${imported.length} 条（来自草稿 ${draft.name || draft.id}）`,
+        });
+
+        const draftCopy = JSON.parse(JSON.stringify(draft));
+        draftCopy._originalIndex = draftIdx;
+
+        writeLogToTxn(txn, db, {
           action: "record_create",
           targetType: "record",
           targetId: imported.map((r) => r.id).join(","),
@@ -440,26 +448,33 @@ export function createDataIoRouter(helpers) {
           meta: { source: "csv_import_draft", count: imported.length, draftId: draft.id },
         });
 
-        writeLog(db, {
-          operator,
+        if (allWarnings.length > 0) {
+          writeLogToTxn(txn, db, {
+            action: "warning_create",
+            targetType: "warning",
+            targetId: allWarnings.map((w) => w.id).join(","),
+            before: null,
+            after: allWarnings,
+            farmId: allWarnings[0]?.farmId || "",
+            meta: { source: "csv_import_draft", count: allWarnings.length, draftId: draft.id },
+          });
+        }
+
+        writeLogToTxn(txn, db, {
           action: "import_draft_confirm",
           targetType: "import_draft",
           targetId: draft.id,
-          before: {
-            id: draft.id,
-            name: draft.name,
-            totalRows: draft.rows.length,
-            validCount: validRows.length,
-            errorCount: draft.rows.length - validRows.length,
-          },
+          before: draftCopy,
           after: {
             importedCount: imported.length,
             skippedCount: skipped.length,
             warningsGenerated: allWarnings.length,
           },
           farmId: draft.farmId,
-          meta: { source: "csv_import_draft_confirm" },
+          meta: { source: "csv_import_draft_confirm", draftOriginalIndex: draftIdx },
         });
+
+        commitTxn(db, txn);
 
         drafts.splice(draftIdx, 1);
         await saveDb(db);
@@ -527,8 +542,13 @@ export function createDataIoRouter(helpers) {
       }
 
       if (imported.length > 0) {
-        writeLog(db, {
+        const txn = beginTxn(db, {
           operator: input.operator || "",
+          farmId: imported[0]?.farmId || "",
+          description: `快速导入每日记录 ${imported.length} 条`,
+        });
+
+        writeLogToTxn(txn, db, {
           action: "record_create",
           targetType: "record",
           targetId: imported.map((r) => r.id).join(","),
@@ -537,6 +557,20 @@ export function createDataIoRouter(helpers) {
           farmId: imported[0]?.farmId || "",
           meta: { source: "csv_import", count: imported.length },
         });
+
+        if (allWarnings.length > 0) {
+          writeLogToTxn(txn, db, {
+            action: "warning_create",
+            targetType: "warning",
+            targetId: allWarnings.map((w) => w.id).join(","),
+            before: null,
+            after: allWarnings,
+            farmId: allWarnings[0]?.farmId || "",
+            meta: { source: "csv_import", count: allWarnings.length },
+          });
+        }
+
+        commitTxn(db, txn);
         await saveDb(db);
       }
 

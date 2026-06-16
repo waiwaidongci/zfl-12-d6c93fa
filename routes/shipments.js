@@ -1,4 +1,4 @@
-import { writeLog } from "../utils/audit-log.js";
+import { writeLog, beginTxn, writeLogToTxn, commitTxn } from "../utils/audit-log.js";
 import { calculateBatchQuantity, updateBatchLedgers } from "../utils/quantity-ledger.js";
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
 
@@ -201,15 +201,24 @@ export function createShipmentsRouter(helpers) {
 
       db.shipments = db.shipments || [];
       db.shipments.push(shipment);
-      writeLog(db, {
+
+      const txn = beginTxn(db, {
         operator: input.operator || "",
+        farmId,
+        description: `新增发货：订单 ${order.id} - ${shipment.quantity}尾`,
+      });
+
+      writeLogToTxn(txn, db, {
         action: "shipment_create",
         targetType: "shipment",
         targetId: shipment.id,
         before: null,
         after: shipment,
-        farmId: farmId,
+        farmId,
+        meta: { batchId: shipment.batchId, orderId: order.id },
       });
+
+      commitTxn(db, txn);
 
       updateBatchLedgers(db, shipment.batchId);
 
@@ -242,15 +251,24 @@ export function createShipmentsRouter(helpers) {
         shipment._originalIndex = shipmentIndex;
         const [deleted] = shipments.splice(shipmentIndex, 1);
         db.shipments = shipments;
-        writeLog(db, {
+
+        const txn = beginTxn(db, {
           operator: "",
+          farmId: shipment.farmId,
+          description: `删除发货记录：${shipment.id}`,
+        });
+
+        writeLogToTxn(txn, db, {
           action: "shipment_delete",
           targetType: "shipment",
           targetId: shipmentId,
           before: shipment,
           after: null,
           farmId: shipment.farmId,
+          meta: { batchId: shipment.batchId, orderId: shipment.orderId },
         });
+
+        commitTxn(db, txn);
 
         updateBatchLedgers(db, shipment.batchId);
 

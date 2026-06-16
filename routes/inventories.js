@@ -1,4 +1,4 @@
-import { writeLog } from "../utils/audit-log.js";
+import { writeLog, beginTxn, writeLogToTxn, commitTxn } from "../utils/audit-log.js";
 import { updateBatchLedgers } from "../utils/quantity-ledger.js";
 
 const DEFAULT_FARM_ID = "FARM-DEFAULT";
@@ -98,18 +98,37 @@ export function createInventoriesRouter(helpers) {
       if (!db.inventories) db.inventories = [];
       db.inventories.push(inventory);
 
+      const batchBefore = { ...batch };
       batch.estimatedCount = actualCount;
+      const batchAfter = { ...batch };
 
-      writeLog(db, {
+      const txn = beginTxn(db, {
         operator: input.operator || "",
+        farmId,
+        description: `盘点校准：批次 ${batch.id}（${method === "full" ? "实际盘点" : "抽样估算"}）`,
+      });
+
+      writeLogToTxn(txn, db, {
         action: "inventory_create",
         targetType: "inventory",
         targetId: inventory.id,
         before: null,
         after: inventory,
-        farmId: farmId,
+        farmId,
         meta: { batchId: batch.id, previousEstimatedCount: systemEstimate },
       });
+
+      writeLogToTxn(txn, db, {
+        action: "batch_update",
+        targetType: "batch",
+        targetId: batch.id,
+        before: batchBefore,
+        after: batchAfter,
+        farmId,
+        meta: { inventoryId: inventory.id, reason: "盘点校准" },
+      });
+
+      commitTxn(db, txn);
 
       updateBatchLedgers(db, input.batchId);
 
@@ -141,9 +160,12 @@ export function createInventoriesRouter(helpers) {
         }
         existing._originalIndex = inventoryIndex;
         const removed = existing;
-        db.inventories.splice(inventoryIndex, 1);
 
         const batch = db.batches.find((b) => b.id === removed.batchId);
+        const batchBefore = batch ? { ...batch } : null;
+
+        db.inventories.splice(inventoryIndex, 1);
+
         if (batch) {
           const remainingInventories = (db.inventories || [])
             .filter((i) => i.batchId === batch.id)
@@ -156,8 +178,27 @@ export function createInventoriesRouter(helpers) {
           }
         }
 
-        writeLog(db, {
+        const batchAfter = batch ? { ...batch } : null;
+
+        const txn = beginTxn(db, {
           operator: "",
+          farmId: removed.farmId,
+          description: `删除盘点记录：批次 ${removed.batchId}`,
+        });
+
+        if (batchBefore && batchAfter) {
+          writeLogToTxn(txn, db, {
+            action: "batch_update",
+            targetType: "batch",
+            targetId: batch.id,
+            before: batchBefore,
+            after: batchAfter,
+            farmId: removed.farmId,
+            meta: { inventoryId: removed.id, reason: "删除盘点记录后回退估算数" },
+          });
+        }
+
+        writeLogToTxn(txn, db, {
           action: "inventory_delete",
           targetType: "inventory",
           targetId: removed.id,
@@ -165,6 +206,8 @@ export function createInventoriesRouter(helpers) {
           after: null,
           farmId: removed.farmId,
         });
+
+        commitTxn(db, txn);
 
         updateBatchLedgers(db, removed.batchId);
 
