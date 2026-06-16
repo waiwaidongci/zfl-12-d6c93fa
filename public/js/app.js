@@ -352,17 +352,11 @@ async function renderTrace() {
       detail: `[${e.category}] ${e.description || ""}，金额 ${e.amount.toFixed(2)} 元${e.quantity ? `，数量 ${e.quantity}${e.unit || ""}` : ""}`,
     })),
     ...(trace.orders || []).map((e) => {
-      const customerName = e.customerInfo?.name || e.customerName || "未知客户";
+      const customerName = OrderShipmentHelpers.getCustomerName(e);
       const statusLabel = ORDER_STATUSES[e.status]?.label || e.status;
       let deliveryText = "";
       if (e.daysRemaining !== null) {
-        if (e.isOverdue) {
-          deliveryText = `，交付日期 ${e.deliveryDate}（逾期 ${Math.abs(e.daysRemaining)} 天）`;
-        } else if (e.isApproaching) {
-          deliveryText = `，交付日期 ${e.deliveryDate}（还剩 ${e.daysRemaining} 天）`;
-        } else {
-          deliveryText = `，交付日期 ${e.deliveryDate}（还剩 ${e.daysRemaining} 天）`;
-        }
+        deliveryText = `，交付日期 ${e.deliveryDate}（${e.isOverdue ? "逾期 " + Math.abs(e.daysRemaining) + " 天" : "还剩 " + e.daysRemaining + " 天"}）`;
       } else if (e.deliveryDate) {
         deliveryText = `，交付日期 ${e.deliveryDate}`;
       }
@@ -381,7 +375,7 @@ async function renderTrace() {
       };
     }),
     ...(trace.shipments || []).map((e) => {
-      const customerName = e.customerInfo?.name || e.customerName || "未知客户";
+      const customerName = OrderShipmentHelpers.getCustomerName(e);
       return {
         date: e.date,
         title: "批次发货",
@@ -489,15 +483,13 @@ async function renderTrace() {
         if (e.orderId) {
           const statusInfo = ORDER_STATUSES[e.orderStatus] || { label: e.orderStatus, class: "" };
           const progress = e.orderQuantity > 0 ? Math.round((e.orderShipped / e.orderQuantity) * 100) : 0;
-          let deliveryBadge = "";
           let eventClass = "event-order";
           if (e.isOverdue) {
             eventClass += " event-order-overdue";
-            deliveryBadge = '<span class="order-delivery-badge order-delivery-overdue">逾期 ' + Math.abs(e.daysRemaining) + ' 天</span>';
           } else if (e.isApproaching) {
             eventClass += " event-order-approaching";
-            deliveryBadge = '<span class="order-delivery-badge order-delivery-approaching">还剩 ' + e.daysRemaining + ' 天</span>';
           }
+          const deliveryBadge = OrderShipmentHelpers.renderDeliveryBadgeHtml(e);
           return `
             <div class="event ${eventClass}" data-order-id="${e.orderId}" style="cursor:pointer;">
               <div class="event-order-header">
@@ -2165,60 +2157,30 @@ function bindWarningEvents() {
 }
 
 function renderOrderStats() {
-  const orders = filterByFarm(db.orders || []);
-  const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
-  const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
-  const deliveryStart = document.getElementById("orderDeliveryStart")?.value || "";
-  const deliveryEnd = document.getElementById("orderDeliveryEnd")?.value || "";
-  let filtered = orders;
-  if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
-  if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
-  if (deliveryStart) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate >= deliveryStart);
-  if (deliveryEnd) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate <= deliveryEnd);
+  var allOrders = filterByFarm(db.orders || []);
+  var fv = OrderShipmentHelpers.getOrderFilterValues();
+  var filtered = OrderShipmentHelpers.filterOrders(allOrders, fv);
+  var c = OrderShipmentHelpers.calcOrderCounts(filtered);
 
-  const total = filtered.length;
-  const pending = filtered.filter((o) => o.status === "pending").length;
-  const partial = filtered.filter((o) => o.status === "partial").length;
-  const completed = filtered.filter((o) => o.status === "completed").length;
-  const cancelled = filtered.filter((o) => o.status === "cancelled").length;
-  const activeOrders = filtered.filter((o) => o.status !== "cancelled" && o.status !== "completed");
-  const approaching = activeOrders.filter((o) => o.isApproaching).length;
-  const overdue = activeOrders.filter((o) => o.isOverdue).length;
-  const totalQty = filtered
-    .filter((o) => o.status !== "cancelled")
-    .reduce((sum, o) => sum + Number(o.orderQuantity || 0), 0);
-  const totalAmount = filtered
-    .filter((o) => o.status !== "cancelled")
-    .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
-
-  const stats = [
-    ["订单总数", total + " 单"],
-    ["待发货", pending + " 单"],
-    ["部分发货", partial + " 单"],
-    ["已完成", completed + " 单"],
-    ["已取消", cancelled + " 单"],
-    ["临期订单", '<span class="order-stat-approaching">' + approaching + " 单</span>"],
-    ["逾期订单", '<span class="order-stat-overdue">' + overdue + " 单</span>"],
-    ["订购总量", totalQty.toLocaleString() + " 尾"],
-    ["订单总额", totalAmount.toFixed(2) + " 元"],
+  var stats = [
+    ["订单总数", c.total + " 单"],
+    ["待发货", c.pending + " 单"],
+    ["部分发货", c.partial + " 单"],
+    ["已完成", c.completed + " 单"],
+    ["已取消", c.cancelled + " 单"],
+    ["临期订单", '<span class="order-stat-approaching">' + c.approaching + " 单</span>"],
+    ["逾期订单", '<span class="order-stat-overdue">' + c.overdue + " 单</span>"],
+    ["订购总量", c.totalOrderQuantity.toLocaleString() + " 尾"],
+    ["订单总额", c.totalOrderAmount.toFixed(2) + " 元"],
   ];
 
-  document.getElementById("orderStats").innerHTML = stats
-    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
-    .join("");
+  document.getElementById("orderStats").innerHTML = OrderShipmentHelpers.renderStatsHtml(stats);
 }
 
 function renderOrderList() {
-  const orders = filterByFarm(db.orders || []);
-  const batchFilter = document.getElementById("orderBatchFilter")?.value || "";
-  const statusFilter = document.getElementById("orderStatusFilter")?.value || "";
-  const deliveryStart = document.getElementById("orderDeliveryStart")?.value || "";
-  const deliveryEnd = document.getElementById("orderDeliveryEnd")?.value || "";
-  let filtered = orders;
-  if (batchFilter) filtered = filtered.filter((o) => o.batchId === batchFilter);
-  if (statusFilter) filtered = filtered.filter((o) => o.status === statusFilter);
-  if (deliveryStart) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate >= deliveryStart);
-  if (deliveryEnd) filtered = filtered.filter((o) => o.deliveryDate && o.deliveryDate <= deliveryEnd);
+  var allOrders = filterByFarm(db.orders || []);
+  var fv = OrderShipmentHelpers.getOrderFilterValues();
+  var filtered = OrderShipmentHelpers.filterOrders(allOrders, fv);
   filtered = [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const list = document.getElementById("orderList");
@@ -2230,18 +2192,16 @@ function renderOrderList() {
   list.innerHTML = filtered
     .map((o) => {
       const statusInfo = ORDER_STATUSES[o.status] || { label: o.status, class: "" };
-      const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+      const customerName = OrderShipmentHelpers.getCustomerName(o);
       const batch = db.batches?.find((b) => b.id === o.batchId);
       const species = batch?.species || "";
       let deliveryClass = "";
-      let deliveryBadge = "";
       if (o.isOverdue) {
         deliveryClass = "order-overdue";
-        deliveryBadge = '<span class="order-delivery-badge order-delivery-overdue">逾期 ' + Math.abs(o.daysRemaining) + " 天</span>";
       } else if (o.isApproaching) {
         deliveryClass = "order-approaching";
-        deliveryBadge = '<span class="order-delivery-badge order-delivery-approaching">还剩 ' + o.daysRemaining + " 天</span>";
       }
+      const deliveryBadge = OrderShipmentHelpers.renderDeliveryBadgeHtml(o);
       return `
     <div class="order-card ${deliveryClass}" data-id="${o.id}">
       <div class="order-header">
@@ -2258,7 +2218,7 @@ function renderOrderList() {
         <div class="row"><span class="label">单价</span><span>${Number(o.unitPrice).toFixed(4)} 元/尾</span></div>
         <div class="row"><span class="label">订单金额</span><strong>¥${o.totalAmount.toFixed(2)}</strong></div>
         <div class="row"><span class="label">已发金额</span><span>¥${o.shippedAmount.toFixed(2)}</span></div>
-        <div class="row"><span class="label">交付日期</span><span class="${o.isOverdue ? "order-delivery-overdue-text" : o.isApproaching ? "order-delivery-approaching-text" : ""}">${o.deliveryDate || "-"}${o.daysRemaining !== null ? " (" + (o.isOverdue ? "逾期" + Math.abs(o.daysRemaining) + "天" : "还剩" + o.daysRemaining + "天") + ")" : ""}</span></div>
+        <div class="row"><span class="label">交付日期</span><span class="${OrderShipmentHelpers.renderDeliveryDateClass(o)}">${OrderShipmentHelpers.renderDeliveryDateText(o)}</span></div>
         <div class="row"><span class="label">创建时间</span><span>${new Date(o.createdAt).toLocaleString("zh-CN")}</span></div>
       </div>
       ${o.note ? `<div class="meta" style="margin-top:8px;font-size:12px;">备注：${o.note}</div>` : ""}
@@ -2375,13 +2335,7 @@ function openOrderModal(orderId = null, prefillBatchId = null) {
     try {
       const availableRes = await api("/api/batches/" + batchId + "/available");
       currentAvailable = availableRes.availableQuantity;
-      stockInfoEl.innerHTML = `
-        <div class="row"><span class="label">估算数量</span><span>${availableRes.estimatedCount.toLocaleString()} 尾</span></div>
-        <div class="row"><span class="label">旧模式销售</span><span>${availableRes.oldSalesQuantity.toLocaleString()} 尾</span></div>
-        <div class="row"><span class="label">已发货</span><span>${availableRes.shippedQuantity.toLocaleString()} 尾</span></div>
-        <div class="row"><span class="label">订单占用</span><span style="color:#c77700;">${(availableRes.reservedQuantity || 0).toLocaleString()} 尾</span></div>
-        <div class="row"><span class="label">当前可售</span><strong style="color:#2e7d57;">${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
-      `;
+      stockInfoEl.innerHTML = OrderShipmentHelpers.renderBatchStockInfoHtml(availableRes);
       qtyHintEl.innerHTML = `最多可订购 ${availableRes.availableQuantity.toLocaleString()} 尾`;
       qtyInputEl.max = availableRes.availableQuantity;
     } catch (err) {
@@ -2480,10 +2434,9 @@ function bindOrderEvents() {
 }
 
 function renderShipmentStats() {
-  const shipments = filterByFarm(db.shipments || []);
-  const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
-  let filtered = shipments;
-  if (batchFilter) filtered = filtered.filter((s) => s.batchId === batchFilter);
+  var allShipments = filterByFarm(db.shipments || []);
+  var fv = OrderShipmentHelpers.getShipmentFilterValues();
+  var filtered = OrderShipmentHelpers.filterShipments(allShipments, fv);
 
   const total = filtered.length;
   const totalQty = filtered.reduce((sum, s) => sum + Number(s.quantity || 0), 0);
@@ -2495,18 +2448,13 @@ function renderShipmentStats() {
     ["发货总额", totalAmount.toFixed(2) + " 元"],
   ];
 
-  document.getElementById("shipmentStats").innerHTML = stats
-    .map(([k, v]) => `<div class="stat"><span>${k}</span><strong>${v}</strong></div>`)
-    .join("");
+  document.getElementById("shipmentStats").innerHTML = OrderShipmentHelpers.renderStatsHtml(stats);
 }
 
 function renderShipmentList() {
-  const shipments = filterByFarm(db.shipments || []);
-  const batchFilter = document.getElementById("shipmentBatchFilter")?.value || "";
-  const orderFilter = document.getElementById("shipmentStatusFilter")?.value || "";
-  let filtered = shipments;
-  if (batchFilter) filtered = filtered.filter((s) => s.batchId === batchFilter);
-  if (orderFilter) filtered = filtered.filter((s) => s.orderId === orderFilter);
+  var allShipments = filterByFarm(db.shipments || []);
+  var fv = OrderShipmentHelpers.getShipmentFilterValues();
+  var filtered = OrderShipmentHelpers.filterShipments(allShipments, fv);
   filtered = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
 
   const list = document.getElementById("shipmentList");
@@ -2517,7 +2465,7 @@ function renderShipmentList() {
 
   list.innerHTML = filtered
     .map((s) => {
-      const customerName = s.customerInfo?.name || s.customerName || "未知客户";
+      const customerName = OrderShipmentHelpers.getCustomerName(s);
       const batch = db.batches?.find((b) => b.id === s.batchId);
       const species = batch?.species || "";
       const order = s.orderInfo;
@@ -2533,7 +2481,7 @@ function renderShipmentList() {
         <div class="row"><span class="label">关联订单</span><span>${s.orderId}</span></div>
         ${order ? `<div class="row"><span class="label">订单总量</span><span>${order.orderQuantity.toLocaleString()} 尾</span></div>` : ""}
         ${order ? `<div class="row"><span class="label">订单已发</span><span>${order.shippedQuantity.toLocaleString()} 尾</span></div>` : ""}
-        ${order ? `<div class="row"><span class="label">订单剩余</span><span>${order.remainingQuantity.toLocaleString()} 尾</span></div>` : ""}
+        ${order ? OrderShipmentHelpers.renderOrderRemainingRow(order.remainingQuantity) : ""}
         <div class="row"><span class="label">本次发货</span><strong>${s.quantity.toLocaleString()} 尾</strong></div>
         <div class="row"><span class="label">发货日期</span><span>${s.date}</span></div>
         ${order ? `<div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>` : ""}
@@ -2568,14 +2516,12 @@ function renderShipments() {
   }
   if (orderFilter && orders.length) {
     const currentVal = orderFilter.value;
-    const validOrders = orders.filter(
-      (o) => o.status !== "cancelled" && o.remainingQuantity > 0
-    );
+    const validOrders = OrderShipmentHelpers.getValidOrdersForShipment(orders);
     orderFilter.innerHTML =
       '<option value="">全部订单</option>' +
       validOrders
         .map((o) => {
-          const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+          const customerName = OrderShipmentHelpers.getCustomerName(o);
           return `<option value="${o.id}">${o.id} · ${customerName} · 剩余 ${o.remainingQuantity.toLocaleString()} 尾</option>`;
         })
         .join("");
@@ -2586,9 +2532,7 @@ function renderShipments() {
 }
 
 function openShipmentModal(shipmentId = null, prefillOrderId = null) {
-  const orders = (db.orders || []).filter(
-    (o) => o.status !== "cancelled" && o.remainingQuantity > 0
-  );
+  const orders = OrderShipmentHelpers.getValidOrdersForShipment(db.orders || []);
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
@@ -2600,7 +2544,7 @@ function openShipmentModal(shipmentId = null, prefillOrderId = null) {
           <option value="">请选择订单</option>
           ${orders
             .map((o) => {
-              const customerName = o.customerInfo?.name || o.customerName || "未知客户";
+              const customerName = OrderShipmentHelpers.getCustomerName(o);
               const batch = db.batches?.find((b) => b.id === o.batchId);
               const species = batch?.species || "";
               return `<option value="${o.id}" ${prefillOrderId === o.id ? "selected" : ""}>${o.id} · ${customerName} · ${o.batchId}${species ? " · " + species : ""} · 剩余 ${o.remainingQuantity.toLocaleString()} 尾</option>`;
@@ -2638,18 +2582,14 @@ function openShipmentModal(shipmentId = null, prefillOrderId = null) {
     try {
       const order = await api("/api/orders/" + orderId);
       const availableRes = await api("/api/batches/" + order.batchId + "/available");
-      const customerName = order.customerInfo?.name || order.customerName || "未知客户";
+      const customerName = OrderShipmentHelpers.getCustomerName(order);
       orderInfo.innerHTML = `
         <div class="row"><span class="label">客户</span><span>${customerName}</span></div>
         <div class="row"><span class="label">订购数量</span><span>${order.orderQuantity.toLocaleString()} 尾</span></div>
         <div class="row"><span class="label">已发货</span><span>${order.shippedQuantity.toLocaleString()} 尾</span></div>
-        <div class="row"><span class="label">订单剩余</span><strong>${order.remainingQuantity.toLocaleString()} 尾</strong></div>
+        ${OrderShipmentHelpers.renderOrderRemainingRow(order.remainingQuantity)}
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ddd;">
-          <div class="row"><span class="label">批次估算</span><span>${availableRes.estimatedCount.toLocaleString()} 尾</span></div>
-          <div class="row"><span class="label">旧模式销售</span><span>${availableRes.oldSalesQuantity.toLocaleString()} 尾</span></div>
-          <div class="row"><span class="label">已发货</span><span>${availableRes.shippedQuantity.toLocaleString()} 尾</span></div>
-          <div class="row"><span class="label">订单占用</span><span style="color:#c77700;">${(availableRes.reservedQuantity || 0).toLocaleString()} 尾</span></div>
-          <div class="row"><span class="label">批次可售</span><strong style="color:#2e7d57;">${availableRes.availableQuantity.toLocaleString()} 尾</strong></div>
+          ${OrderShipmentHelpers.renderOrderStockDetailRows(availableRes)}
         </div>
         <div class="row"><span class="label">单价</span><span>${Number(order.unitPrice).toFixed(4)} 元/尾</span></div>
       `;
